@@ -1,6 +1,6 @@
 import zipfile
 import io
-from fmpy.util import extract
+from fmpy import extract
 import os
 import shutil
 
