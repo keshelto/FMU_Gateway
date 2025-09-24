@@ -3,14 +3,18 @@ import io
 from fmpy import extract
 import os
 import shutil
+import tempfile
 
 def validate_fmu(content: bytes, sha256: str):
     # Check size (arbitrary limit for safety)
     if len(content) > 100 * 1024 * 1024:
         raise ValueError("FMU too large")
     # Safe extract to temp dir to check contents
-    temp_dir = f"/tmp/{sha256}"
-    extract(content, temp_dir)
+    with tempfile.NamedTemporaryFile(delete=False) as temp_fmu:
+        temp_fmu.write(content)
+        temp_fmu_path = temp_fmu.name
+    temp_dir = tempfile.mkdtemp()
+    extract(temp_fmu_path, temp_dir)
     has_sources = 'sources' in os.listdir(temp_dir)
     binaries_dir = os.path.join(temp_dir, 'binaries')
     platforms = [d for d in os.listdir(binaries_dir) if os.path.isdir(os.path.join(binaries_dir, d))] if os.path.exists(binaries_dir) else []
@@ -23,3 +27,4 @@ def validate_fmu(content: bytes, sha256: str):
                 raise ValueError("Unsafe zip paths detected")
     # Cleanup
     shutil.rmtree(temp_dir)
+    os.unlink(temp_fmu_path)

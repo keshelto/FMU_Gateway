@@ -25,7 +25,12 @@ async def upload_fmu(file: UploadFile):
     try:
         security.validate_fmu(content, sha256)
         fmu_id, path = storage.save_fmu(content)
-        meta = storage.read_model_description(path)
+        meta_obj = storage.read_model_description(path)
+        meta = {
+            "fmi_version": meta_obj.fmiVersion,
+            "model_name": meta_obj.modelName,
+            "guid": meta_obj.guid
+        }
         meta['id'] = fmu_id
         meta['sha256'] = sha256
         return meta

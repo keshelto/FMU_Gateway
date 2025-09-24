@@ -36,5 +36,13 @@ uvicorn app.main:app --reload
 
 ## Notes on bringing Simulink/GT-SUITE FMUs later
 Export as Linux-compatible or source FMU (FMPy compiles sources).
+## Capabilities for AI Agents
+- **FMI Support**: FMI 2.0/3.0 for Model Exchange (ME) and Co-Simulation (CS).
+- **Upload FMU**: POST /fmus - Upload and register FMU, returns ID, FMI version, model name, GUID, SHA256.
+- **List Variables**: GET /fmus/{id}/variables - Get list of variables with name, causality, variability, declaredType.
+- **Simulate**: POST /simulate - Run simulation with stop_time, step, start_values, input_signals (time-series), kpis (e.g., y_rms; extensible).
+- **Security & Limits**: 20s timeout, 5MB response cap, platform validation (Linux binaries or sources required), no network during sim.
+- **Provenance**: All responses include FMI version, GUID, SHA256 for determinism.
+- **Extensibility**: Easy to add custom KPIs in kpi.py.
 
 # Test comment to trigger deploy

@@ -1,8 +1,8 @@
 import os
 import hashlib
-from fmpy import read_model_description
+from fmpy import read_model_description as fmpy_read_model_description
 
-DATA_DIR = "/app/data"
+DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def save_fmu(bytes_data: bytes) -> tuple[str, str]:
@@ -16,4 +16,4 @@ def get_fmu_path(fmu_id: str) -> str:
     return os.path.join(DATA_DIR, f"{fmu_id}.fmu")
 
 def read_model_description(path: str):
-    return read_model_description(path)
+    return fmpy_read_model_description(path)

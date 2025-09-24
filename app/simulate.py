@@ -1,5 +1,5 @@
 import numpy as np
-from fmpy import simulate_fmu
+from fmpy import simulate_fmu as fmpy_simulate_fmu
 
 def simulate_fmu(path: str, req):
     inputs = None
@@ -18,10 +18,8 @@ def simulate_fmu(path: str, req):
         names = [sig['name'] for sig in signals]
         matrix = np.column_stack([t] + [sig['u'] for sig in signals])
         inputs = (np.array(names), matrix)
-    return simulate_fmu(
+    return fmpy_simulate_fmu(
         path,
-        start_time=0,
-        stop_time=req.stop_time,
         step_size=req.step,
         start_values=req.start_values,
         input=inputs,
