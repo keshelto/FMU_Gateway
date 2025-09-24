@@ -30,9 +30,11 @@ uvicorn app.main:app --reload
 - Simulate: `curl -H "Content-Type: application/json" -d '{"fmu_id":"id","stop_time":1.0,"step":0.001,"start_values":{},"input_signals":[],"kpis":["y_rms"]}' http://localhost:8000/simulate`
 
 ## Fly.io deployment steps
-1. Set FLY_API_TOKEN as GitHub secret.
+1. Set FLY_API_TOKEN as GitHub secret. Done
 2. Push to main; CI deploys automatically.
 3. Access at https://{app}.fly.dev.
 
 ## Notes on bringing Simulink/GT-SUITE FMUs later
 Export as Linux-compatible or source FMU (FMPy compiles sources).
+
+# Test comment to trigger deploy
