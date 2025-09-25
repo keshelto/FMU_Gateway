@@ -20,7 +20,16 @@ import app.db as db_mod
 import stripe
 from app.schemas import PaymentResponse
 
-r = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+# Redis with fallback
+r = None
+try:
+    from redis import Redis
+    r = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+    r.ping()  # Test connection
+except Exception as e:
+    print(f"Redis unavailable ({e}). Caching disabled.")
+    r = None
+
 STRIPE_ENABLED = os.getenv('STRIPE_ENABLED', 'true').lower() == 'true'
 
 security = HTTPBearer()
@@ -133,7 +142,12 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
     import hashlib
     req_dump = json.dumps(req.model_dump(exclude={'payment_token', 'payment_method'}), sort_keys=True)  # Exclude payment for cache key
     cache_key = f"sim:{req.fmu_id}:{hashlib.sha256(req_dump.encode()).hexdigest()}"
-    cached = r.get(cache_key)
+    cached = None
+    if r is not None:
+        try:
+            cached = r.get(cache_key)
+        except Exception as e:
+            print(f"Redis get failed: {e}. Skipping cache.")
     if cached:
         return json.loads(cached)
     
@@ -181,7 +195,11 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         ).model_dump()
         if len(json.dumps(response)) > 5 * 1024 * 1024:
             raise HTTPException(413, "Response too large; downsample or select fewer variables")
-        r.set(cache_key, json.dumps(response), ex=3600)
+        if r is not None:
+            try:
+                r.set(cache_key, json.dumps(response), ex=3600)
+            except Exception as e:
+                print(f"Redis set failed: {e}. Cache not saved.")
         
         # Log usage
         usage = db_mod.Usage(api_key_id=current_user.id, fmu_id=req.fmu_id, duration_ms=duration)
