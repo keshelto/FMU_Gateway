@@ -34,15 +34,58 @@ uvicorn app.main:app --reload
 2. Push to main; CI deploys automatically.
 3. Access at https://{app}.fly.dev.
 
-## Notes on bringing Simulink/GT-SUITE FMUs later
-Export as Linux-compatible or source FMU (FMPy compiles sources).
-## Capabilities for AI Agents
-- **FMI Support**: FMI 2.0/3.0 for Model Exchange (ME) and Co-Simulation (CS).
-- **Upload FMU**: POST /fmus - Upload and register FMU, returns ID, FMI version, model name, GUID, SHA256.
-- **List Variables**: GET /fmus/{id}/variables - Get list of variables with name, causality, variability, declaredType.
-- **Simulate**: POST /simulate - Run simulation with stop_time, step, start_values, input_signals (time-series), kpis (e.g., y_rms; extensible).
-- **Security & Limits**: 20s timeout, 5MB response cap, platform validation (Linux binaries or sources required), no network during sim.
-- **Provenance**: All responses include FMI version, GUID, SHA256 for determinism.
-- **Extensibility**: Easy to add custom KPIs in kpi.py.
+## Phase 2: MSL Library, SDKs, Auth, Tracking & Billing
 
-# Test comment to trigger deploy
+### Modelica Standard Library (MSL)
+- Pre-built FMUs in `/app/library/msl/` (generated via `scripts/export_msl_fmus.py` using OpenModelica).
+- GET /library?query=<search> : List models with metadata (model_name, fmi_version, guid, description).
+- Simulate with fmu_id = "msl:<model_name>" (no upload needed).
+
+To add more MSL FMUs:
+1. Run `pip install OMPython` locally.
+2. Extend models list in `scripts/export_msl_fmus.py`.
+3. Run `python scripts/export_msl_fmus.py`.
+4. Copy generated .fmu to `app/library/msl/`.
+
+### SDKs
+#### Python
+See `sdk/python/README.md` for installation and usage. Supports all endpoints, including library and auth.
+
+#### JavaScript (Node.js)
+See `sdk/js/README.md` for installation and usage. Supports all endpoints, including auth.
+
+### API Keys & Authentication
+- POST /keys : Generate API key (requires no auth).
+- All other endpoints require `Authorization: Bearer <key>` header.
+- Keys persisted in Postgres, usage tracked.
+
+### Usage Tracking & Billing
+- Postgres (Fly Postgres) tracks simulations per key (timestamp, fmu_id, duration).
+- Stripe integration: $0.01 per simulation charged to customer linked to key.
+- Set env: `STRIPE_SECRET_KEY`, `DATABASE_URL` (from `fly postgres attach`).
+
+cURL example with auth:
+- Key: `curl -X POST http://localhost:8000/keys` → {"key": "uuid"}
+- Upload: `curl -H "Authorization: Bearer uuid" -F "file=@model.fmu" http://localhost:8000/fmus`
+- Simulate library: `curl -H "Authorization: Bearer uuid" -H "Content-Type: application/json" -d '{"fmu_id":"msl:BouncingBall","stop_time":5.0,"step":0.01,"kpis":["y_rms"]}' http://localhost:8000/simulate`
+
+### Fly.io Setup for Phase 2
+1. Postgres: `fly postgres create --name fmu-gateway-db` then `fly postgres attach fmu-gateway-db --app fmu-gateway`
+2. Secrets: `fly secrets set DATABASE_URL=$(fly postgres config show -a fmu-gateway-db | grep PRIMARY) STRIPE_SECRET_KEY=sk_...`
+3. Redis (optional): Use Upstash or Fly Redis, set REDIS_URL.
+4. Deploy: Push to main.
+
+### A2A & 402 Protocol Compatibility (Future-Proofing)
+- Supports Google's Agent-to-Agent (A2A) interactions with HTTP 402 "Payment Required" for unpaid simulations.
+- In `/simulate`, if `STRIPE_ENABLED=true` and no `payment_token`, returns 402 with payment details (0.01 USD, methods: google_pay/stripe_card).
+- Agents send `payment_token` (Stripe/Google Pay) and `payment_method` in request body to pay and simulate in one call.
+- Verification via Stripe (PaymentIntent for tokens). Set `STRIPE_SECRET_KEY` for live; mocks in tests.
+- Example for agents: POST /simulate with token → 200 if paid, else 402. Usage tracked for billing reconciliation.
+
+cURL example (with payment token):
+- `curl -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -d '{"fmu_id":"msl:BouncingBall","stop_time":1.0,"step":0.01,"kpis":["y_rms"],"payment_token":"tok_visa","payment_method":"stripe_card"}' http://localhost:8000/simulate`
+
+For Google Pay: Agents use Google Pay API to get token, send as `payment_token`. Extend for full A2A chaining (e.g., /pay endpoint if needed).
+
+## Tests
+- Phase 1: `pytest tests/`

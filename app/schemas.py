@@ -13,6 +13,8 @@ class SimulateRequest(BaseModel):
     start_values: Dict[str, float] = {}
     input_signals: List[InputSignal] = []
     kpis: List[str] = []
+    payment_token: Optional[str] = None  # Stripe/Google Pay token
+    payment_method: Optional[str] = None  # e.g., 'google_pay', 'stripe_card'
 
 class SimulateResponse(BaseModel):
     id: str
@@ -34,3 +36,9 @@ class Variable(BaseModel):
     causality: str
     variability: str
     declaredType: Optional[str] = None
+
+class PaymentResponse(BaseModel):
+    amount: float = 0.01
+    currency: str = "usd"
+    methods: List[str] = ["google_pay", "stripe_card"]
+    description: str = "FMU Simulation Charge"

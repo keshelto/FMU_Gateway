@@ -1,0 +1,16 @@
+{
+  "name": "fmu-gateway-sdk-js",
+  "version": "0.1.0",
+  "description": "JavaScript SDK for FMU Gateway API",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests\" && exit 0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "form-data": "^4.0.0"
+  },
+  "keywords": ["fmu", "modelica", "simulation"],
+  "author": "Your Name",
+  "license": "MIT"
+}

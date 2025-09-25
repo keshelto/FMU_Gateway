@@ -4,22 +4,22 @@ import urllib.request
 from app.simulate import simulate_fmu
 from app.kpi import compute_kpi
 from app.storage import save_fmu, DATA_DIR
+from app.schemas import SimulateRequest
 
 # Download sample FMU
-url = "https://github.com/modelon-community/fmpy/raw/develop/tests/fmu/BouncingBall.fmu"
-with urllib.request.urlopen(url) as response:
-    content = response.read()
-fmu_id, path = save_fmu(content)
+path = "app/library/msl/BouncingBall.fmu"
+fmu_id = "BouncingBall"  # Dummy for req
 
 # Simulate
-class Req:
-    stop_time = 5.0
-    step = 0.01
-    start_values = {}
-    input_signals = []
-    kpis = ["y_rms"]  # Note: Will raise if 'y' not in model; test assumes it computes or errors gracefully
+req = SimulateRequest(
+    fmu_id=fmu_id,
+    stop_time=5.0,
+    step=0.01,
+    start_values={},
+    input_signals=[],
+    kpis=["y_rms"]
+)
 
-req = Req()
 result = simulate_fmu(path, req)
 assert len(result['time']) > 0, "Time array empty"
 try:

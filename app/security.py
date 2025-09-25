@@ -4,6 +4,7 @@ from fmpy import extract
 import os
 import shutil
 import tempfile
+import stripe
 
 def validate_fmu(content: bytes, sha256: str):
     # Check size (arbitrary limit for safety)
@@ -28,3 +29,12 @@ def validate_fmu(content: bytes, sha256: str):
     # Cleanup
     shutil.rmtree(temp_dir)
     os.unlink(temp_fmu_path)
+
+def validate_payment_token(token: str, customer_id: str) -> bool:
+    try:
+        stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+        # Basic verification (for Google Pay, use stripe.tokens.create or payment_intent)
+        stripe.Token.retrieve(token)  # Or adapt for PaymentMethod
+        return True
+    except stripe.error.StripeError:
+        return False

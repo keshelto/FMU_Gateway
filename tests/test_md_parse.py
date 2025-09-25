@@ -2,10 +2,7 @@ import urllib.request
 from app.storage import save_fmu, read_model_description
 
 # Download sample FMU
-url = "https://github.com/modelon-community/fmpy/raw/develop/tests/fmu/BouncingBall.fmu"
-with urllib.request.urlopen(url) as response:
-    content = response.read()
-fmu_id, path = save_fmu(content)
+path = "app/library/msl/BouncingBall.fmu"
 
 # Parse
 meta = read_model_description(path)

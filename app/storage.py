@@ -15,5 +15,8 @@ def save_fmu(bytes_data: bytes) -> tuple[str, str]:
 def get_fmu_path(fmu_id: str) -> str:
     return os.path.join(DATA_DIR, f"{fmu_id}.fmu")
 
+def get_fmu_sha256(fmu_id: str) -> str:
+    return fmu_id  # Since id is the sha256
+
 def read_model_description(path: str):
     return fmpy_read_model_description(path)
