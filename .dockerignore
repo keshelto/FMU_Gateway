@@ -1,0 +1,26 @@
+# flyctl launch added from .gitignore
+# Python
+**\__pycache__
+**\*.py[cod]
+**\*.pyo
+**\*.pyd
+**\.Python
+**\env
+**\venv
+**\.venv
+**\pip-log.txt
+**\pip-delete-this-directory.txt
+
+# Docker
+**\*.log
+
+# Misc
+**\.DS_Store
+**\Thumbs.db
+**\*.swp
+**\*.swo
+
+# flyctl launch added from .pytest_cache\.gitignore
+# Created by pytest automatically.
+.pytest_cache\**\*
+fly.toml

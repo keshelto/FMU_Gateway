@@ -1,14 +1,26 @@
-app = "fmu-gateway"
-primary_region = "lhr"
+# fly.toml app configuration file generated for fmu-gateway-long-pine-7571 on 2025-09-25T16:23:55+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'fmu-gateway-long-pine-7571'
+primary_region = 'lhr'
+
+[build]
+
+[env]
+  DATABASE_URL = ''
+  REDIS_URL = 'redis://localhost:6379'
+  STRIPE_SECRET_KEY = ''
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = true
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
-[[env]]
-  DATABASE_URL = ""
-  STRIPE_SECRET_KEY = ""
-  REDIS_URL = "redis://localhost:6379"
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
