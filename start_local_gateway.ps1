@@ -12,11 +12,14 @@ Set-Location -Path $PSScriptRoot
 $env:DATABASE_URL = "sqlite:///./local.db"
 $env:STRIPE_ENABLED = "false"
 $env:REDIS_URL = ""
+$env:REQUIRE_AUTH = "false"
 
 Write-Host "Starting local FMU Gateway..." -ForegroundColor Green
 Write-Host "Server will be available at: http://localhost:8000" -ForegroundColor Yellow
 Write-Host "Health check at: http://localhost:8000/health" -ForegroundColor Yellow
 Write-Host "API docs at: http://localhost:8000/docs" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "NOTE: Authentication is DISABLED for local development" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Press CTRL+C to stop the server" -ForegroundColor Red
 Write-Host ""

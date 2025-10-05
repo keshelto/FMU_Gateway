@@ -31,8 +31,9 @@ except Exception as e:
     r = None
 
 STRIPE_ENABLED = os.getenv('STRIPE_ENABLED', 'true').lower() == 'true'
+REQUIRE_AUTH = os.getenv('REQUIRE_AUTH', 'true').lower() == 'true'
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # Don't auto-error to allow optional auth
 
 def get_db():
     db = db_mod.SessionLocal()
@@ -42,6 +43,20 @@ def get_db():
         db.close()
 
 def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security), db=Depends(get_db)):
+    # If auth is not required (local dev), return a dummy key object
+    if not REQUIRE_AUTH:
+        # Create a fake API key object for local development
+        fake_key = db_mod.ApiKey(id=1, key="local-dev", stripe_customer_id=None)
+        return fake_key
+    
+    # Production: require authentication
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     api_key_obj = db.query(db_mod.ApiKey).filter(db_mod.ApiKey.key == credentials.credentials).first()
     if not api_key_obj:
         raise HTTPException(
