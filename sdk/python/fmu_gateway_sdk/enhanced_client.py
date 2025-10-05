@@ -136,8 +136,11 @@ class EnhancedFMUGatewayClient:
             )
             if response.status_code == 200:
                 result = response.json()
+                # Normalize to match upload response format
+                if 'fmu_id' in result and 'id' not in result:
+                    result['id'] = result['fmu_id']
                 if self.verbose:
-                    print(f"✓ FMU already on gateway (cached): {result['fmu_id']}")
+                    print(f"✓ FMU already on gateway (cached): {result.get('id', result.get('fmu_id'))}")
                 return result
         except Exception:
             pass

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 FMU Simulation Runner - AI Agent Friendly Interface
 
@@ -17,10 +18,17 @@ Usage:
 import argparse
 import json
 import sys
+import os
 import time
 from pathlib import Path
 from typing import Dict, Optional
 import hashlib
+
+# Fix Windows console encoding for Unicode
+if sys.platform == 'win32':
+    os.system('chcp 65001 > nul 2>&1')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # Check if SDK is available
 try:
