@@ -63,6 +63,10 @@ def startup():
 def root():
     return {"message": "FMU Gateway", "docs": "/docs"}
 
+@app.get("/health")
+def health():
+    return {"status": "healthy", "version": "1.0.0"}
+
 @app.post("/keys")
 def create_key(db=Depends(get_db)):
     key = str(uuid.uuid4())
@@ -114,6 +118,27 @@ def get_variables(fmu_id: str, current_user: db_mod.ApiKey = Depends(verify_api_
         } for v in meta.modelVariables
     ]
     return variables
+
+@app.get("/fmus/by-hash/{sha256}")
+def get_fmu_by_hash(sha256: str, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
+    """Lookup FMU by SHA256 hash for smart caching"""
+    data_dir = "data"
+    for filename in os.listdir(data_dir):
+        if filename.endswith('.fmu'):
+            fmu_path = os.path.join(data_dir, filename)
+            with open(fmu_path, 'rb') as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            if file_hash == sha256:
+                fmu_id = filename.replace('.fmu', '')
+                meta = storage.read_model_description(fmu_path)
+                return {
+                    "fmu_id": fmu_id,
+                    "sha256": sha256,
+                    "model_name": meta.modelName,
+                    "fmi_version": meta.fmiVersion,
+                    "guid": meta.guid
+                }
+    raise HTTPException(404, "FMU with this hash not found")
 
 @app.get("/library")
 def get_library(query: Optional[str] = None, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):

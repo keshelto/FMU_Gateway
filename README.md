@@ -3,10 +3,28 @@
 ## What this is
 A secure, deterministic service for uploading and simulating FMI 2.0/3.0 FMUs (ME & CS) using FMPy. Deployed on Fly.io in Docker. Priorities: small API surface, security (e.g., platform checks, no network during sim), and clear schemas.
 
+## Quick Start (AI Agent Friendly)
+
+**Zero-configuration simulation:**
+```bash
+python run_fmu_simulation.py --auto
+```
+
+This automatically:
+- ✓ Detects best gateway (local or public)
+- ✓ Creates API key if needed
+- ✓ Uploads FMU with smart caching
+- ✓ Runs simulation and saves results
+
+**Expected time: 10-20 seconds**
+
+See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
+
 ## Architecture
 - FastAPI backend with endpoints: /fmus (upload), /fmus/{id}/variables (list), /simulate (run).
 - Local disk storage (/app/data).
 - FMPy for simulation; KPIs in kpi.py (extensible).
+- Enhanced SDK with auto-detection and fallback support.
 
 ## Security Notes
 - Rejects non-Linux binaries unless sources present.
@@ -21,8 +39,33 @@ A secure, deterministic service for uploading and simulating FMI 2.0/3.0 FMUs (M
 ## Local dev
 ```bash
 pip install -r requirements.txt
+pip install -e ./sdk/python  # Install SDK
 uvicorn app.main:app --reload
 ```
+
+## Python SDK Usage
+
+### Basic Usage
+```python
+from fmu_gateway_sdk.enhanced_client import EnhancedFMUGatewayClient, SimulateRequest
+
+# Auto-detect best gateway
+client = EnhancedFMUGatewayClient(gateway_url="auto")
+
+# Upload with smart caching
+fmu_meta = client.upload_fmu_smart("model.fmu")
+
+# Simulate
+req = SimulateRequest(fmu_id=fmu_meta['id'], stop_time=10.0, step=0.01)
+result = client.simulate(req)
+```
+
+### With Fallback
+```python
+result = client.simulate_with_fallback(req, local_simulator=my_local_sim)
+```
+
+See [sdk/python/README.md](sdk/python/README.md) for full SDK documentation.
 
 ## cURL examples
 - Upload: `curl -F "file=@path/to/model.fmu" http://localhost:8000/fmus`
