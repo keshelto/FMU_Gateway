@@ -20,6 +20,19 @@ This automatically:
 
 See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
 
+### Fuel rail pressure example (no FMU required)
+
+To generate a quick demonstration of rail pressure dynamics without sourcing a
+full fuel-system FMU, run the lightweight analytical model:
+
+```bash
+python scripts/simulate_fuel_rail.py
+```
+
+This produces `data/fuel_rail_pressure.csv` with the time history plus a plot
+(`data/fuel_rail_pressure.png`) that visualises pump and injector flows against
+the resulting pressure fluctuations.
+
 ## Architecture
 - FastAPI backend with endpoints: /fmus (upload), /fmus/{id}/variables (list), /simulate (run).
 - Local disk storage (/app/data).
