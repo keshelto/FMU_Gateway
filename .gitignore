@@ -10,6 +10,14 @@ venv/
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Database files (local development)
+*.db
+local.db
+test.db
+
+# Simulation outputs (temporary)
+simulation_results/
+
 # Docker
 *.log
 
