@@ -4,7 +4,7 @@ import hashlib
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InputSignal(BaseModel):
@@ -17,9 +17,12 @@ class SimulateRequest(BaseModel):
     fmu_id: str
     stop_time: float
     step: float = 0.001
-    start_values: Dict[str, float] = {}
-    input_signals: List[InputSignal] = []
-    kpis: List[str] = []
+    start_values: Dict[str, float] = Field(default_factory=dict)
+    input_signals: List[InputSignal] = Field(default_factory=list)
+    kpis: List[str] = Field(default_factory=list)
+    payment_token: Optional[str] = None
+    payment_method: Optional[str] = None
+    quote_only: Optional[bool] = None
 
 
 class EnhancedFMUGatewayClient:
@@ -222,11 +225,25 @@ class EnhancedFMUGatewayClient:
                 print(f"🚀 Running simulation (stop_time={req.stop_time}s, step={req.step}s)...")
             
             start_time = time.time()
+            payload = req.model_dump(exclude_none=True)
             response = self.session.post(
                 f'{self.gateway_url}/simulate',
-                json=req.model_dump(),
+                json=payload,
                 timeout=60
             )
+
+            if response.status_code == 402:
+                payment_details = {}
+                try:
+                    payment_details = response.json()
+                except ValueError:
+                    payment_details = {"message": "Payment required", "raw": response.text}
+                if self.verbose:
+                    print("💳 Payment required before simulation:")
+                    for key, value in payment_details.items():
+                        print(f"  - {key}: {value}")
+                return {"status": "payment_required", "payment": payment_details}
+
             response.raise_for_status()
             result = response.json()
             sim_time = time.time() - start_time
