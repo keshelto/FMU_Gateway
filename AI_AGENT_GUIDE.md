@@ -72,6 +72,10 @@ python run_fmu_simulation.py --auto
 - ✓ Uses gateway if available, fallback to local if needed
 - ✓ Zero configuration required
 
+**Micropayments & quotes**
+- `--quote` → receive HTTP 402 payload with amount + supported payment methods (no simulation run)
+- `--payment-token` & `--payment-method` → include wallet or Stripe credentials to execute and bill immediately
+
 ### Gateway Mode
 ```bash
 python run_fmu_simulation.py --mode=gateway
@@ -120,6 +124,14 @@ Example `params.json`:
 ```bash
 python run_fmu_simulation.py --auto --fmu=path/to/model.fmu
 ```
+
+### Scavenge pump capacity customer pack
+```bash
+python Engineering_Analysis_Examples/Scav_Capacity/run_example.py
+```
+- Summarises the provided scavenge pump dataset
+- Embeds gateway health status so agents can reassure customers before charging
+- Produces JSON + Markdown deliverables for downstream automations
 
 ## Success Indicators
 
