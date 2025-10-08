@@ -18,7 +18,25 @@ This automatically:
 
 **Expected time: 10-20 seconds**
 
+Need an upfront payment quote before executing? Add `--quote` to receive an HTTP
+402 response with amount, supported methods, and next steps. When you have a
+Google Pay or Stripe token, reuse the same command with
+`--payment-token <token> --payment-method google_pay` to execute and charge.
+
 See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
+
+## Engineering Analysis Examples
+
+### Scavenge pump capacity workflow
+
+1. Start the gateway locally (`uvicorn app.main:app --host 0.0.0.0 --port 8000`).
+2. Quote the job: `python run_fmu_simulation.py --auto --fmu app/library/msl/BouncingBall.fmu --quote`.
+3. Generate a customer report: `python Engineering_Analysis_Examples/Scav_Capacity/run_example.py`.
+4. Collect payment and rerun with `--payment-token` once authorised.
+
+The analysis script stores JSON + Markdown briefs in
+`Engineering_Analysis_Examples/Scav_Capacity/outputs/` so an agent can send a
+summary immediately after the payment clears.
 
 ### Fuel rail pressure example (no FMU required)
 

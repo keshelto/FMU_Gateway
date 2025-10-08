@@ -18,7 +18,6 @@ from fastapi import Depends, HTTPException, status
 import time
 import app.db as db_mod
 import stripe
-from app.schemas import PaymentResponse
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -187,7 +186,13 @@ def get_library(query: Optional[str] = None, current_user: db_mod.ApiKey = Depen
 @app.post("/simulate")
 def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
     import hashlib
-    req_dump = json.dumps(req.model_dump(exclude={'payment_token', 'payment_method'}), sort_keys=True)  # Exclude payment for cache key
+    if req.quote_only:
+        return JSONResponse(
+            status_code=402,
+            content=schemas.PaymentResponse(status="quote_only", description="Simulation payment quote", next_step="Submit payment_token and payment_method to proceed").model_dump()
+        )
+
+    req_dump = json.dumps(req.model_dump(exclude={'payment_token', 'payment_method', 'quote_only'}), sort_keys=True)  # Exclude payment for cache key
     cache_key = f"sim:{req.fmu_id}:{hashlib.sha256(req_dump.encode()).hexdigest()}"
     cached = None
     if r is not None:
@@ -259,13 +264,18 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
             if req.payment_token:
                 # Assume Google Pay token via Stripe (verify/setup payment method)
                 try:
-                    payment_method = stripe.PaymentMethod.create(type='card', card={'token': req.payment_token})  # Adapt for Google Pay
+                    metadata = {'payment_method': req.payment_method or 'google_pay'}
+                    payment_method = stripe.PaymentMethod.create(
+                        type='card',
+                        card={'token': req.payment_token}
+                    )
                     stripe.PaymentIntent.create(
                         amount=1,  # cents
                         currency='usd',
                         customer=current_user.stripe_customer_id,
                         payment_method=payment_method.id,
-                        confirm=True
+                        confirm=True,
+                        metadata=metadata
                     )
                 except stripe.error.StripeError:
                     raise HTTPException(402, "Payment failed")
