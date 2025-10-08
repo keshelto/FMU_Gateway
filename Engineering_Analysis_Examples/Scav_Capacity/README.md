@@ -36,13 +36,17 @@ customer-facing summary:
 python Engineering_Analysis_Examples/Scav_Capacity/run_example.py
 ```
 
-Outputs are written to `Engineering_Analysis_Examples/Scav_Capacity/outputs/`:
+When you run the script it writes customer-ready artefacts to
+`Engineering_Analysis_Examples/Scav_Capacity/outputs/`:
 
 - `scavenge_capacity_summary.json` – machine-readable metrics for downstream agents
 - `scavenge_capacity_summary.md` – ready-to-send briefing for customers
+- `scavenge_capacity_overview.png` – visual bundle of inputs, calculations, and results for customer review
 
-Both files include the live gateway health status so your agent can reassure the
-customer that the service is online before requesting payment.
+These generated files are ignored by git so the repository stays lightweight.
+Regenerate them at any time by rerunning the command above. Each report includes
+the live gateway health status so your agent can reassure the customer that the
+service is online before requesting payment.
 
 ## Step 3 – Collect payment and execute
 
@@ -68,6 +72,7 @@ The analysis script reports:
 - Mean/min/max ratio of scavenge to pressure flow (target ≥ 3x)
 - Pump displacement statistics in cm³ per revolution
 - Recommended 10% safety margin for flow capacity
+- Annotated visualization aligning the raw data with the margin recommendation
 
 Use these headline figures in customer proposals or integrate them into a wider
 agent workflow that automates quoting, payment, execution, and report delivery.

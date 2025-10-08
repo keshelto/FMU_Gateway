@@ -34,9 +34,10 @@ See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
 3. Generate a customer report: `python Engineering_Analysis_Examples/Scav_Capacity/run_example.py`.
 4. Collect payment and rerun with `--payment-token` once authorised.
 
-The analysis script stores JSON + Markdown briefs in
-`Engineering_Analysis_Examples/Scav_Capacity/outputs/` so an agent can send a
-summary immediately after the payment clears.
+The analysis script stores JSON + Markdown briefs (and a PNG overview chart)
+inside `Engineering_Analysis_Examples/Scav_Capacity/outputs/`. Those artefacts
+are generated on demand and ignored by git so you can recreate them per run and
+share the fresh outputs with customers as soon as payment clears.
 
 ### Fuel rail pressure example (no FMU required)
 

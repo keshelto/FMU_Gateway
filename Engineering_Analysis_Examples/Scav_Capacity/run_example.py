@@ -8,8 +8,9 @@ import statistics
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
+import matplotlib.pyplot as plt
 import requests
 
 DATA_FILE = Path(__file__).with_name("scavenge_pump_capacity_simulation.csv")
@@ -142,12 +143,30 @@ def write_outputs(summary: Dict) -> None:
             "## Pump Displacement",
             f"- Mean: {displacement['mean']:.2f} cm^3/rev",
             f"- Range: {displacement['min']:.2f} – {displacement['max']:.2f} cm^3/rev",
-            "",
+            "", 
             "## Revenue Hooks",
             f"- Quote amount: ${summary['micropayment_quote']['price_usd']:.2f}",
             "- Prompt agents to upsell logged data exports after payment authorization.",
         ]
     )
+
+    if summary.get("visualizations"):
+        lines.extend(
+            [
+                "",
+                "## Visualizations",
+                "The overview chart bundles the raw data, ratio calculations, and recommended margin so customers can quickly validate the result.",
+            ]
+        )
+        for label, filename in summary["visualizations"].items():
+            lines.append(f"- {label.replace('_', ' ').title()}: `{filename}`")
+        first_image = next(iter(summary["visualizations"].values()))
+        lines.extend(
+            [
+                "",
+                f"![Scavenge capacity overview]({first_image})",
+            ]
+        )
 
     with open(md_path, "w") as f:
         f.write("\n".join(lines) + "\n")
@@ -156,10 +175,56 @@ def write_outputs(summary: Dict) -> None:
     print(f"✓ Markdown brief written to {md_path}")
 
 
+def create_visualizations(records: List[ScavengeRecord], summary: Dict) -> Dict[str, str]:
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    if not records:
+        return {}
+
+    sorted_records = sorted(records, key=lambda rec: rec.engine_speed_rpm)
+    engine_speed = [rec.engine_speed_rpm for rec in sorted_records]
+    pressure_flow = [rec.pressure_flow_lpm for rec in sorted_records]
+    scavenge_flow = [rec.scavenge_flow_lpm for rec in sorted_records]
+    ratio = [rec.flow_ratio for rec in sorted_records]
+    displacement = [rec.displacement_cm3_per_rev for rec in sorted_records]
+
+    recommended_ratio = summary.get("recommended_margin_ratio")
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=True, constrained_layout=True)
+
+    axes[0].plot(engine_speed, pressure_flow, marker="o", label="Pressure flow")
+    axes[0].plot(engine_speed, scavenge_flow, marker="s", label="Scavenge flow")
+    axes[0].set_ylabel("Flow (L/min)")
+    axes[0].set_title("Input data: pump flows vs. engine speed")
+    axes[0].legend(loc="best")
+
+    axes[1].plot(engine_speed, ratio, color="#0072B5", marker="D", label="Measured ratio")
+    if recommended_ratio is not None:
+        axes[1].axhline(recommended_ratio, color="#D55E00", linestyle="--", label="Recommended margin")
+    axes[1].set_ylabel("Scavenge / Pressure ratio")
+    axes[1].set_title("Calculation: ratio trending and recommended margin")
+    axes[1].legend(loc="best")
+
+    axes[2].bar(engine_speed, displacement, color="#00A170")
+    axes[2].set_xlabel("Engine speed (RPM)")
+    axes[2].set_ylabel("Displacement (cm³/rev)")
+    axes[2].set_title("Result context: pump displacement per operating point")
+
+    for ax in axes:
+        ax.grid(True, linestyle="--", alpha=0.4)
+
+    visual_path = OUTPUT_DIR / "scavenge_capacity_overview.png"
+    fig.savefig(visual_path, dpi=200)
+    plt.close(fig)
+
+    return {"overview": visual_path.name}
+
+
 def main():
     gateway_info = check_gateway_health()
     records = load_records()
     summary = build_summary(records, gateway_info)
+    summary["visualizations"] = create_visualizations(records, summary)
     write_outputs(summary)
     print("\nScavenge pump capacity analysis complete. Use the quote data to trigger payment in your agent workflows.")
 
