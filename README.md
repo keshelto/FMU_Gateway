@@ -38,6 +38,7 @@ the resulting pressure fluctuations.
 - Local disk storage (/app/data).
 - FMPy for simulation; KPIs in kpi.py (extensible).
 - Enhanced SDK with auto-detection and fallback support.
+- Deterministic SQLite persistence when Postgres is unavailable.
 
 ## Security Notes
 - Rejects non-Linux binaries unless sources present.
@@ -48,6 +49,18 @@ the resulting pressure fluctuations.
 ## How to export an FMU from OpenModelica
 - GUI: Load model > Simulate > Output > Export FMU.
 - CLI: `omc --translateModelFMU=ModelName`.
+
+## Database-free deployment
+The gateway automatically falls back to SQLite when `DATABASE_URL` is unset. The
+resolver tries, in order:
+
+1. `FMU_GATEWAY_DB_PATH` if you want to provide an explicit path.
+2. `/data/fmu_gateway.sqlite3` which maps to Fly.io's persistent volume mount.
+3. `local.db` in the repository root for ad-hoc local runs.
+
+This allows the service to operate with zero external dependencies while still
+persisting API keys and usage counters. Set `STRIPE_ENABLED=false` to run fully
+offline.
 
 ## Local dev
 ```bash
