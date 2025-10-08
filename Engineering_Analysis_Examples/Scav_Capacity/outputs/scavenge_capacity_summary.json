@@ -1,0 +1,28 @@
+{
+  "generated_at": "2025-10-08T14:07:35Z",
+  "gateway": {
+    "status": "online",
+    "version": "1.0.0"
+  },
+  "points": 18,
+  "engine_speed_range_rpm": {
+    "min": 1000.0,
+    "max": 9500.0
+  },
+  "scavenge_to_pressure_ratio": {
+    "mean": 3.0,
+    "min": 2.9999999999999996,
+    "max": 3.0
+  },
+  "pump_displacement_cm3_per_rev": {
+    "mean": 21.052631578947366,
+    "min": 21.052631578947363,
+    "max": 21.05263157894737
+  },
+  "recommended_margin_ratio": 3.3,
+  "micropayment_quote": {
+    "status": "quote_only",
+    "price_usd": 0.01,
+    "instructions": "Use --payment-token and --payment-method with run_fmu_simulation.py to authorize execution"
+  }
+}
