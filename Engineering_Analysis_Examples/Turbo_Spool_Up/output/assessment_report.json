@@ -1,0 +1,59 @@
+{
+  "assessment": {
+    "success_rate": 80.0,
+    "issues": [
+      "[ERROR] Poor energy conservation"
+    ],
+    "successes": [
+      "[OK] Simulation completed successfully",
+      "[OK] Consistent time stepping",
+      "[OK] Bouncing behavior detected",
+      "[OK] Key metrics computed successfully"
+    ],
+    "verdict": "EXCELLENT"
+  },
+  "quality_analysis": {
+    "total_points": 751,
+    "step_variation": 4.379854294760844e-17,
+    "h_range": [
+      2.2250738585072014e-308,
+      1.0
+    ],
+    "v_range": [
+      -4.434119999999978,
+      3.0813209999999844
+    ]
+  },
+  "physics_analysis": {
+    "energy_conservation_error": 1.0898961967057956,
+    "bounces_detected": 24,
+    "final_height": 2.2250738585072014e-308
+  },
+  "performance_analysis": {
+    "status": "ok",
+    "fmi_version": "3.0",
+    "metrics_available": 3
+  },
+  "metrics": {
+    "spool_time_95": 0.432,
+    "settling_time": null,
+    "peak_speed": 4.434119999999978,
+    "overshoot": 4.434119999999978
+  },
+  "summary": {
+    "gateway": "msl:BouncingBall",
+    "status": "ok",
+    "kpis": {},
+    "provenance": {
+      "fmi_version": "3.0",
+      "guid": "{1AE5E10D-9521-4DE3-80B9-D0EAAA7D5AF1}",
+      "sha256": "9601dc38f848d3334da14dfe243b3121295da138ba4bf38df01603b44f67cf0c"
+    },
+    "metrics": {
+      "spool_time_95": 0.432,
+      "settling_time": null,
+      "peak_speed": 4.434119999999978,
+      "overshoot": 4.434119999999978
+    }
+  }
+}

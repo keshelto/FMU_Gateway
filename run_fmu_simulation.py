@@ -114,25 +114,37 @@ class FMUSimulationRunner:
         
         # Step 5: Prepare simulation request
         if config is None:
-            config = {
-                "stop_time": 10.0,
-                "step": 0.01,
-                "start_values": {},
-                "kpis": []
-            }
-        
-        req = SimulateRequest(
-            fmu_id=fmu_id,
-            stop_time=config.get("stop_time", 10.0),
-            step=config.get("step", 0.01),
-            start_values=config.get("start_values", {}),
-            input_signals=config.get("input_signals", []),
-            kpis=config.get("kpis", [])
-        )
+            config = {}
+
+        req_kwargs = {
+            "fmu_id": fmu_id,
+            "stop_time": config.get("stop_time", 10.0),
+            "step": config.get("step", 0.01),
+            "start_values": config.get("start_values", {}),
+            "input_signals": config.get("input_signals", []),
+            "kpis": config.get("kpis", [])
+        }
+
+        for optional_key in ("payment_token", "payment_method", "quote_only"):
+            if optional_key in config:
+                req_kwargs[optional_key] = config[optional_key]
+
+        req = SimulateRequest(**req_kwargs)
         
         # Step 6: Run simulation
         try:
             result = self.client.simulate(req)
+            if result.get('status') == 'payment_required':
+                print()
+                print("=" * 70)
+                print("PAYMENT REQUIRED")
+                print("=" * 70)
+                payment = result.get('payment', {})
+                for key, value in payment.items():
+                    print(f"{key}: {value}")
+                print()
+                print("Use --payment-token and --payment-method to retry once the wallet authorises the charge.")
+                return result
             print()
             print("=" * 70)
             print("SIMULATION RESULTS")
@@ -309,15 +321,31 @@ def main():
                         help='Path to JSON config file with simulation parameters')
     parser.add_argument('--quiet', action='store_true',
                         help='Suppress status messages')
-    
+    parser.add_argument('--payment-token', type=str,
+                        help='Payment token for x402/402-style micropayments')
+    parser.add_argument('--payment-method', type=str,
+                        help='Payment method identifier (e.g., stripe_card, google_pay)')
+    parser.add_argument('--quote', action='store_true',
+                        help='Request a payment quote without executing the simulation')
+
     args = parser.parse_args()
-    
+
     # Load config if provided
     config = None
     if args.config and args.config.exists():
         with open(args.config) as f:
             config = json.load(f)
-    
+
+    if config is None:
+        config = {}
+
+    if args.payment_token:
+        config['payment_token'] = args.payment_token
+    if args.payment_method:
+        config['payment_method'] = args.payment_method
+    if args.quote:
+        config['quote_only'] = True
+
     # Create runner
     runner = FMUSimulationRunner(verbose=not args.quiet)
     
