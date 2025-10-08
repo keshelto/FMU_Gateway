@@ -17,6 +17,8 @@ test.db
 
 # Simulation outputs (temporary)
 simulation_results/
+Engineering_Analysis_Examples/Scav_Capacity/outputs/*
+!Engineering_Analysis_Examples/Scav_Capacity/outputs/.gitkeep
 
 # Docker
 *.log

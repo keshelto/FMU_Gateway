@@ -131,7 +131,7 @@ python Engineering_Analysis_Examples/Scav_Capacity/run_example.py
 ```
 - Summarises the provided scavenge pump dataset
 - Embeds gateway health status so agents can reassure customers before charging
-- Produces JSON + Markdown deliverables for downstream automations
+- Produces JSON + Markdown + PNG deliverables (ignored by git; rerun to regenerate)
 
 ## Success Indicators
 
