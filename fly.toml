@@ -12,6 +12,7 @@ primary_region = 'lhr'
   DATABASE_URL = ''
   REDIS_URL = 'redis://localhost:6379'
   STRIPE_SECRET_KEY = ''
+  FMU_GATEWAY_DB_PATH = '/data/fmu_gateway.sqlite3'
 
 [http_service]
   internal_port = 8080

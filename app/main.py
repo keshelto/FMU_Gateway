@@ -19,6 +19,10 @@ import time
 import app.db as db_mod
 import stripe
 from app.schemas import PaymentResponse
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+LIBRARY_DIR = BASE_DIR / "library"
 
 # Redis with fallback
 r = None
@@ -73,6 +77,9 @@ def startup():
     db_mod.Base.metadata.create_all(bind=db_mod.engine)
     # Set Stripe API key
     stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+    api_base = os.getenv('STRIPE_API_BASE')
+    if api_base:
+        stripe.api_base = api_base
 
 @app.get("/")
 def root():
@@ -157,13 +164,13 @@ def get_fmu_by_hash(sha256: str, current_user: db_mod.ApiKey = Depends(verify_ap
 
 @app.get("/library")
 def get_library(query: Optional[str] = None, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
-    fmu_files = glob.glob("library/msl/*.fmu")
+    fmu_files = sorted((LIBRARY_DIR / "msl").glob("*.fmu"))
     models = []
     for f in fmu_files:
         try:
-            meta = storage.read_model_description(f)
+            meta = storage.read_model_description(str(f))
             info = {
-                "id": os.path.basename(f).replace('.fmu', ''),
+                "id": f.stem,
                 "model_name": meta.modelName,
                 "fmi_version": meta.fmiVersion,
                 "guid": meta.guid,
@@ -200,19 +207,19 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
     
     if req.fmu_id.startswith('msl:'):
         model_name = req.fmu_id.split(':', 1)[1]
-        path = os.path.join('library', 'msl', f"{model_name}.fmu")
-        if not os.path.exists(path):
+        path = LIBRARY_DIR / 'msl' / f"{model_name}.fmu"
+        if not path.exists():
             raise HTTPException(404, "Library FMU not found")
-        sha256 = hashlib.sha256(open(path, 'rb').read()).hexdigest()
+        sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     else:
-        path = storage.get_fmu_path(req.fmu_id)
-        if not os.path.exists(path):
+        path = Path(storage.get_fmu_path(req.fmu_id))
+        if not path.exists():
             raise HTTPException(404, "FMU not found")
         sha256 = storage.get_fmu_sha256(req.fmu_id)
-    
+
     start_time = time.time()
     try:
-        result = simulate.simulate_fmu(path, req)
+        result = simulate.simulate_fmu(str(path), req)
         duration = int((time.time() - start_time) * 1000)
         t = result['time'].tolist()
         y = {name: result[name].tolist() for name in result.dtype.names if name != 'time'}

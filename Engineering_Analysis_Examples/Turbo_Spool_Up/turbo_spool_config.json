@@ -1,0 +1,9 @@
+{
+  "fmu_id": "msl:BouncingBall",
+  "stop_time": 3.0,
+  "step": 0.001,
+  "kpis": [],
+  "analysis_variable": "v",
+  "spool_threshold": 0.95,
+  "settling_band": 0.02
+}

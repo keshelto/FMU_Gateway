@@ -105,12 +105,43 @@ class EnhancedFMUGatewayClient:
         """Calculate SHA256 hash of FMU file"""
         if str(fmu_path) in self._fmu_hash_cache:
             return self._fmu_hash_cache[str(fmu_path)]
-        
+
         with open(fmu_path, 'rb') as f:
             file_hash = hashlib.sha256(f.read()).hexdigest()
-        
+
         self._fmu_hash_cache[str(fmu_path)] = file_hash
         return file_hash
+
+    def create_api_key(self, save_to_file: bool = True,
+                       key_path: Optional[Union[str, Path]] = None) -> str:
+        """Request a new API key from the gateway.
+
+        Args:
+            save_to_file: Persist the key for future runs (defaults to
+                ``~/.fmu_gateway_key``).
+            key_path: Optional custom path for persisting the key.
+
+        Returns:
+            The newly issued API key string.
+        """
+        if not self.gateway_url:
+            raise ConnectionError("No gateway available")
+
+        response = self.session.post(f"{self.gateway_url}/keys", timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        api_key = data.get('key')
+
+        if not api_key:
+            raise ValueError("Gateway response did not include an API key")
+
+        if save_to_file:
+            key_path = Path(key_path) if key_path else Path.home() / ".fmu_gateway_key"
+            key_path.write_text(api_key)
+
+        self.api_key = api_key
+        self.session.headers['Authorization'] = f'Bearer {api_key}'
+        return api_key
     
     def upload_fmu_smart(self, fmu_path: Union[str, Path]) -> Dict:
         """

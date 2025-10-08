@@ -1,0 +1,16 @@
+{
+  "gateway": "msl:BouncingBall",
+  "status": "ok",
+  "kpis": {},
+  "provenance": {
+    "fmi_version": "3.0",
+    "guid": "{1AE5E10D-9521-4DE3-80B9-D0EAAA7D5AF1}",
+    "sha256": "9601dc38f848d3334da14dfe243b3121295da138ba4bf38df01603b44f67cf0c"
+  },
+  "metrics": {
+    "spool_time_95": 0.432,
+    "settling_time": null,
+    "peak_speed": 4.434119999999978,
+    "overshoot": 4.434119999999978
+  }
+}
