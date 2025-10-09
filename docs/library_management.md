@@ -32,6 +32,18 @@ To publish a new FMU to the library, drop it in this directory and commit the fi
 
 If you already have FMUs from suppliers or other tools, simply copy them into `app/library/msl/`. Use descriptive filenames because the stem becomes the public identifier. For example, a file named `TwoPhasePump_CS.fmu` will be reachable as `msl:TwoPhasePump_CS`.
 
+You can speed this up with the helper script `scripts/populate_fmu_library.py` which copies one or more `.fmu` archives (or entire directories of FMUs) into the library and validates that the metadata can be read:
+
+```bash
+python scripts/populate_fmu_library.py path/to/fmus/*.fmu
+
+# Example: copy everything from an export directory
+python scripts/populate_fmu_library.py ~/Downloads/msl_fmus
+
+# Add --dry-run to preview actions or --replace to overwrite existing files
+python scripts/populate_fmu_library.py ~/Downloads/msl_fmus --dry-run
+```
+
 ## Verifying the library
 
 After adding FMUs you can confirm that the gateway can discover them by running the local server and querying `/library`:
