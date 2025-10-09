@@ -19,14 +19,22 @@ To publish a new FMU to the library, drop it in this directory and commit the fi
 ## Option 1 – Export new FMUs from OpenModelica
 
 1. Install OpenModelica locally and ensure the `OMPython` package is available in your Python environment.
-2. Edit `scripts/export_msl_fmus.py` and extend the `models` list with the fully-qualified Modelica class names you want to export.
-3. Run the exporter:
+2. Use the catalog exporter to discover and build FMUs directly from the Modelica Standard Library:
    ```bash
-   python scripts/export_msl_fmus.py
+   # Preview the first 10 candidates inside Modelica.Mechanics (no FMUs written)
+   python scripts/msl_catalog_exporter.py --packages Modelica.Mechanics --limit 10 --dry-run
+
+   # Export all "Examples" models from Modelica.Blocks as FMI 3.0 ME/CS FMUs
+   python scripts/msl_catalog_exporter.py \
+       --packages Modelica.Blocks \
+       --only-examples \
+       --output ~/Downloads/msl_fmus
    ```
-   The script generates FMI 3.0 Model Exchange and Co-Simulation FMUs in the `msl_fmus/` folder.
-4. Copy the generated `.fmu` files into `app/library/msl/` (keep whichever flavour—ME, CS, or both—you need).
-5. Commit the new FMUs so they are available to all agents and deployments.
+   The script will connect to your local OpenModelica installation, iterate over the
+   selected packages, and emit FMUs into the requested output directory.
+3. Copy the generated `.fmu` files into `app/library/msl/` (keep whichever flavour—ME, CS, or both—you need). The helper script
+   `scripts/populate_fmu_library.py` can bulk-copy and validate a directory of FMUs for you.
+4. Commit the new FMUs so they are available to all agents and deployments.
 
 ## Option 2 – Add existing FMUs manually
 
