@@ -14,6 +14,9 @@ Some types of requirements to cover:
 - Performance criteria (power output, efficiency, etc.)
 - Environmental and regulatory considerations
 - Cost and time constraints
+- Standard visual representation of the complete system (e.g., GT-Power, MATLAB
+  Simulink, TensorFlow/Lambda block diagrams, or an equivalent polished
+  schematic) to communicate structure and signal flow
 
 | Num | Requirement | Achieved |
 | --- | ----------- | -------- |
