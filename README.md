@@ -125,7 +125,7 @@ See [sdk/python/README.md](sdk/python/README.md) for full SDK documentation.
 ## Phase 2: MSL Library, SDKs, Auth, Tracking & Billing
 
 ### Modelica Standard Library (MSL)
-- Pre-built FMUs in `/app/library/msl/` (generated via `scripts/export_msl_fmus.py` using OpenModelica).
+- Pre-built FMUs in `/app/library/msl/` (generated via `scripts/msl_catalog_exporter.py` using OpenModelica).
 - GET /library?query=<search> : List models with metadata (model_name, fmi_version, guid, description).
 - Simulate with fmu_id = "msl:<model_name>" (no upload needed).
 
