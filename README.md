@@ -129,11 +129,7 @@ See [sdk/python/README.md](sdk/python/README.md) for full SDK documentation.
 - GET /library?query=<search> : List models with metadata (model_name, fmi_version, guid, description).
 - Simulate with fmu_id = "msl:<model_name>" (no upload needed).
 
-To add more MSL FMUs:
-1. Run `pip install OMPython` locally.
-2. Extend models list in `scripts/export_msl_fmus.py`.
-3. Run `python scripts/export_msl_fmus.py`.
-4. Copy generated .fmu to `app/library/msl/`.
+See [docs/library_management.md](docs/library_management.md) for detailed instructions on exporting additional FMUs from OpenModelica, dropping in externally sourced FMUs, and verifying that the gateway exposes them via `/library`.
 
 ### SDKs
 #### Python
