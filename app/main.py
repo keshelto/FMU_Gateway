@@ -4,6 +4,7 @@ from pydantic import ValidationError
 import app.schemas as schemas
 import app.simulate as simulate
 import app.storage as storage
+import app.validation as validation
 import app.security as security
 import app.kpi as kpi
 import os
@@ -226,12 +227,13 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
     try:
         result = simulate.simulate_fmu(str(path), req)
         duration = int((time.time() - start_time) * 1000)
+        meta = storage.read_model_description(path)
+        validation.validate_simulation_output(result, meta)
         t = result['time'].tolist()
         y = {name: result[name].tolist() for name in result.dtype.names if name != 'time'}
         kpis = {}
         for kp in req.kpis:
             kpis[kp] = kpi.compute_kpi(result, kp)
-        meta = storage.read_model_description(path)
         provenance = {
             "fmi_version": meta.fmiVersion,
             "guid": meta.guid,
@@ -292,5 +294,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         raise HTTPException(400, str(e))
     except TimeoutError:
         raise HTTPException(408, "Simulation timeout")
+    except validation.SimulationValidationError as e:
+        raise HTTPException(422, str(e))
     except Exception as e:
         raise HTTPException(500, str(e))
