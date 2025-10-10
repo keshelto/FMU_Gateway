@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 import app.schemas as schemas
 import app.simulate as simulate
 import app.storage as storage
@@ -71,6 +71,84 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
     return api_key_obj
 
 app = FastAPI(title="FMU Gateway")
+
+
+def _kw_to_w(value: float) -> float:
+    return value * 1000.0
+
+
+def _lpm_to_m3s(value: float) -> float:
+    return value / 60000.0
+
+
+def _c_to_k(value: float) -> float:
+    return value + 273.15
+
+
+def _simulate_wrapper(fmu: str, start_values: dict, current_user, db):
+    req = schemas.SimulateRequest(
+        fmu_id=f"msl:{fmu}",
+        stop_time=10.0,
+        step=0.1,
+        start_values=start_values,
+    )
+    result = run_simulation(req, current_user, db)
+    final = {k: (v[-1] if v else None) for k, v in result.get("y", {}).items()}
+    return {"status": result.get("status"), "final_values": final, "time": result.get("t", [])}
+
+
+class CoolingSystemRequest(BaseModel):
+    power_kw: float
+    flow_rate_lpm: float
+    inlet_temp_c: float
+    outlet_temp_c: float
+
+
+class HydraulicCircuitRequest(BaseModel):
+    pump_power_kw: float
+    flow_rate_lpm: float
+    supply_temp_c: float
+    return_temp_c: float
+
+
+class HeatExchangerRequest(BaseModel):
+    hot_inlet_temp_c: float
+    cold_inlet_temp_c: float
+    hot_flow_rate_lpm: float
+    cold_flow_rate_lpm: float
+
+
+@app.post("/calculate/cooling_system")
+def calculate_cooling_system(req: CoolingSystemRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
+    start_values = {
+        "heatLoad": _kw_to_w(req.power_kw),
+        "coolantFlowRate": _lpm_to_m3s(req.flow_rate_lpm),
+        "inletTemperature": _c_to_k(req.inlet_temp_c),
+        "outletTemperature": _c_to_k(req.outlet_temp_c),
+    }
+    return _simulate_wrapper("ThermalSystem", start_values, current_user, db)
+
+
+@app.post("/calculate/hydraulic_circuit")
+def calculate_hydraulic_circuit(req: HydraulicCircuitRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
+    start_values = {
+        "pumpPower": _kw_to_w(req.pump_power_kw),
+        "flowRate": _lpm_to_m3s(req.flow_rate_lpm),
+        "supplyTemperature": _c_to_k(req.supply_temp_c),
+        "returnTemperature": _c_to_k(req.return_temp_c),
+    }
+    return _simulate_wrapper("HydraulicCylinder", start_values, current_user, db)
+
+
+@app.post("/calculate/heat_exchanger")
+def calculate_heat_exchanger(req: HeatExchangerRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
+    start_values = {
+        "hotInletTemperature": _c_to_k(req.hot_inlet_temp_c),
+        "coldInletTemperature": _c_to_k(req.cold_inlet_temp_c),
+        "hotFlowRate": _lpm_to_m3s(req.hot_flow_rate_lpm),
+        "coldFlowRate": _lpm_to_m3s(req.cold_flow_rate_lpm),
+    }
+    return _simulate_wrapper("HeatExchanger", start_values, current_user, db)
 
 @app.on_event("startup")
 def startup():
