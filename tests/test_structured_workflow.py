@@ -1,4 +1,5 @@
 import math
+import time
 
 
 def _structured_payload(preload_scale: float) -> dict:
@@ -97,13 +98,20 @@ def test_parameter_sweep_generates_chart(client):
 
     sweep_payload = {
         "base_request": _structured_payload(preload_scale=1.0),
-        "parameters": [
+        "sweep_parameters": [
             {
                 "path": "parameters.friction.preload_scale",
                 "values": [0.8, 1.0, 1.2],
             }
         ],
-        "post_processing": ["load_vs_wear"],
+        "post_processing": [
+            {
+                "chart_type": "xy_plot",
+                "chart_title": "Load vs Wear",
+                "x_axis_param": "parameters.friction.preload_scale",
+                "y_axis_kpi": "kpis.final_wear_depth",
+            }
+        ],
     }
 
     resp = client.post(
@@ -111,17 +119,35 @@ def test_parameter_sweep_generates_chart(client):
         headers={"Authorization": f"Bearer {key}"},
         json=sweep_payload,
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     sweep_start = resp.json()
-    assert sweep_start["status"] == "pending"
+    assert sweep_start["status"] == "ACCEPTED"
 
-    result_resp = client.get(
-        sweep_start["results_url"],
-        headers={"Authorization": f"Bearer {key}"},
+    results_url = sweep_start["results_url"]
+    sweep = None
+    for _ in range(10):
+        result_resp = client.get(
+            results_url,
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert result_resp.status_code == 200
+        body = result_resp.json()
+        if body.get("status") == "RUNNING":
+            time.sleep(0.05)
+            continue
+        sweep = body
+        break
+
+    assert sweep is not None, "Sweep did not complete in time"
+    assert sweep["status"] == "COMPLETED"
+    assert len(sweep["results"]) == 3
+    parameters = [run["parameters"] for run in sweep["results"]]
+    assert any(
+        math.isclose(p["parameters.friction.preload_scale"], 0.8)
+        for p in parameters
     )
-    assert result_resp.status_code == 200
-    sweep = result_resp.json()
-    assert sweep["status"] == "complete"
-    assert len(sweep["points"]) == 3
-    assert "load_vs_wear" in sweep["charts"]
-    assert sweep["charts"]["load_vs_wear"]
+    charts = sweep["charts"]
+    assert charts
+    chart = next((c for c in charts if c["chart_title"] == "Load vs Wear"), None)
+    assert chart is not None
+    assert chart["image_base64"].startswith("data:image/png;base64,")

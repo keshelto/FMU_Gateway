@@ -15,6 +15,7 @@ import glob
 import itertools
 import io
 import base64
+import copy
 from typing import Optional, Dict, List
 from redis import Redis
 import uuid
@@ -79,6 +80,7 @@ app = FastAPI(title="FMU Gateway")
 
 SIMULATION_RESULTS: Dict[str, dict] = {}
 SWEEP_RESULTS: Dict[str, dict] = {}
+SWEEP_JOB_STATE: Dict[str, dict] = {}
 
 
 def _kw_to_w(value: float) -> float:
@@ -112,14 +114,14 @@ def _get_simulation_summary(run_id: str) -> schemas.SimulationSummary:
     return schemas.SimulationSummary.model_validate(payload)
 
 
-def _store_sweep_summary(summary: schemas.SweepSummary) -> schemas.SweepSummary:
-    payload = summary.model_dump()
-    SWEEP_RESULTS[summary.sweep_id] = payload
-    storage.save_sweep_summary(summary.sweep_id, payload)
-    return summary
+def _store_sweep_result(result: schemas.SweepResultData) -> schemas.SweepResultData:
+    payload = result.model_dump()
+    SWEEP_RESULTS[result.sweep_id] = payload
+    storage.save_sweep_summary(result.sweep_id, payload)
+    return result
 
 
-def _get_sweep_summary(sweep_id: str) -> schemas.SweepSummary:
+def _load_sweep_result(sweep_id: str) -> schemas.SweepResultData:
     if sweep_id in SWEEP_RESULTS:
         payload = SWEEP_RESULTS[sweep_id]
     else:
@@ -128,7 +130,7 @@ def _get_sweep_summary(sweep_id: str) -> schemas.SweepSummary:
         except FileNotFoundError:
             raise HTTPException(404, "Sweep not found")
         SWEEP_RESULTS[sweep_id] = payload
-    return schemas.SweepSummary.model_validate(payload)
+    return schemas.SweepResultData.model_validate(payload)
 
 
 def _run_structured_simulation(req: schemas.SimulateRequest) -> schemas.SimulationSummary:
@@ -175,40 +177,46 @@ def _assign_nested(data: dict, path: List[str], value: float) -> None:
     current[path[-1]] = value
 
 
-def _create_load_vs_wear_chart(points: List[schemas.SweepPointResult]) -> str:
+def _resolve_run_value(run: schemas.SingleRunResult, path: str) -> Optional[float]:
+    if path in run.parameters:
+        return run.parameters[path]
+    if path.startswith("parameters."):
+        key = path.split(".", 1)[1]
+        if key in run.parameters:
+            return run.parameters[key]
+    if path in run.kpis:
+        return run.kpis[path]
+    if path.startswith("kpis."):
+        key = path.split(".", 1)[1]
+        return run.kpis.get(key)
+    return None
+
+
+def _generate_xy_plot(
+    spec: schemas.XYPlotRequest, runs: List[schemas.SingleRunResult]
+) -> Optional[schemas.GeneratedChart]:
+    points: List[tuple[float, float]] = []
+    for run in runs:
+        x_val = _resolve_run_value(run, spec.x_axis_param)
+        y_val = _resolve_run_value(run, spec.y_axis_kpi)
+        if x_val is None or y_val is None:
+            continue
+        points.append((x_val, y_val))
+
     if not points:
-        return ""
+        return None
 
-    selected_path = None
-    for candidate in points[0].parameter_values.keys():
-        if "preload" in candidate:
-            selected_path = candidate
-            break
-    if selected_path is None:
-        selected_path = next(iter(points[0].parameter_values.keys()))
-
-    series = []
-    for point in points:
-        x_value = point.parameter_values.get(selected_path)
-        wear_value = point.key_results.get("final_wear_depth")
-        if isinstance(wear_value, str):
-            try:
-                wear_value = float(wear_value)
-            except ValueError:
-                wear_value = 0.0
-        series.append((x_value, float(wear_value) * 1e6 if wear_value is not None else 0.0))
-
-    series.sort(key=lambda item: item[0])
-    xs = [item[0] for item in series]
-    ys = [item[1] for item in series]
+    points.sort(key=lambda item: item[0])
+    xs = [item[0] for item in points]
+    ys = [item[1] for item in points]
 
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(xs, ys, marker="o")
-    ax.set_xlabel(f"{selected_path} (sweep value)")
-    ax.set_ylabel("Final wear depth [µm]")
-    ax.set_title("Load vs. Wear")
+    ax.set_xlabel(spec.x_axis_param)
+    ax.set_ylabel(spec.y_axis_kpi)
+    ax.set_title(spec.chart_title)
     ax.grid(True, alpha=0.3)
 
     buffer = io.BytesIO()
@@ -216,59 +224,104 @@ def _create_load_vs_wear_chart(points: List[schemas.SweepPointResult]) -> str:
     fig.savefig(buffer, format="png", dpi=200)
     plt.close(fig)
     buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("ascii")
+    encoded = base64.b64encode(buffer.read()).decode("ascii")
+    return schemas.GeneratedChart(
+        chart_title=spec.chart_title,
+        image_base64=f"data:image/png;base64,{encoded}",
+    )
 
 
-def _generate_post_processing(
-    request: schemas.SweepRequest, points: List[schemas.SweepPointResult]
-) -> Dict[str, str]:
-    charts: Dict[str, str] = {}
-    if "load_vs_wear" in request.post_processing:
-        charts["load_vs_wear"] = _create_load_vs_wear_chart(points)
+def _generate_post_processing_charts(
+    requests: List[schemas.XYPlotRequest], runs: List[schemas.SingleRunResult]
+) -> List[schemas.GeneratedChart]:
+    charts: List[schemas.GeneratedChart] = []
+    for spec in requests:
+        if spec.chart_type != "xy_plot":
+            continue
+        chart = _generate_xy_plot(spec, runs)
+        if chart:
+            charts.append(chart)
     return charts
 
 
-def _run_sweep_task(sweep_id: str, request: schemas.SweepRequest) -> None:
-    try:
-        parameter_paths = [param.path for param in request.parameters]
-        parameter_values = [param.values for param in request.parameters]
+def _extract_numeric_key_results(data: Dict[str, float | str]) -> Dict[str, float]:
+    numeric: Dict[str, float] = {}
+    for key, value in data.items():
+        try:
+            numeric[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return numeric
 
-        points: List[schemas.SweepPointResult] = []
-        for combo in itertools.product(*parameter_values):
-            req_payload = request.base_request.model_dump()
-            current_values: Dict[str, float] = {}
+
+def _run_sweep_job(
+    sweep_id: str, request_payload: dict, api_key_id: int, total_runs: int
+) -> None:
+    session = db_mod.SessionLocal()
+    try:
+        sweep_request = schemas.SweepRequest.model_validate(request_payload)
+        current_user = session.get(db_mod.ApiKey, api_key_id)
+        if current_user is None:
+            raise RuntimeError("API key not found for sweep execution")
+
+        parameter_paths = [param.path for param in sweep_request.sweep_parameters]
+        parameter_values = [param.values for param in sweep_request.sweep_parameters]
+
+        if parameter_values:
+            combos = list(itertools.product(*parameter_values))
+        else:
+            combos = [tuple()]
+
+        runs: List[schemas.SingleRunResult] = []
+        for idx, combo in enumerate(combos, start=1):
+            req_payload = copy.deepcopy(sweep_request.base_request.model_dump())
+            parameters: Dict[str, float] = {}
             for path, value in zip(parameter_paths, combo):
                 _assign_nested(req_payload, path.split("."), value)
-                current_values[path] = value
-            sweep_req = schemas.SimulateRequest.model_validate(req_payload)
-            summary = _run_structured_simulation(sweep_req)
-            points.append(
-                schemas.SweepPointResult(
-                    run_id=summary.run_id,
-                    parameter_values=current_values,
-                    key_results=summary.key_results,
-                )
-            )
+                try:
+                    parameters[path] = float(value)
+                except (TypeError, ValueError):
+                    continue
 
-        charts = _generate_post_processing(request, points)
-        summary = schemas.SweepSummary(
+            simulate_request = schemas.SimulateRequest.model_validate(req_payload)
+            response = run_simulation(simulate_request, current_user, session)
+            numeric_kpis = _extract_numeric_key_results(response.key_results)
+            runs.append(schemas.SingleRunResult(parameters=parameters, kpis=numeric_kpis))
+
+            job_state = SWEEP_JOB_STATE.setdefault(
+                sweep_id,
+                {"status": "RUNNING", "total_runs": total_runs, "completed_runs": 0},
+            )
+            job_state["completed_runs"] = idx
+            job_state["status"] = "RUNNING"
+
+        charts = _generate_post_processing_charts(
+            sweep_request.post_processing, runs
+        )
+        result = schemas.SweepResultData(
             sweep_id=sweep_id,
-            status="complete",
-            results_url=f"/sweeps/{sweep_id}",
-            points=points,
+            status="COMPLETED",
+            results=runs,
             charts=charts,
         )
+        _store_sweep_result(result)
+        SWEEP_JOB_STATE[sweep_id] = {
+            "status": "COMPLETED",
+            "total_runs": total_runs,
+            "completed_runs": total_runs,
+            "result": result.model_dump(),
+        }
     except Exception as exc:
-        summary = schemas.SweepSummary(
-            sweep_id=sweep_id,
-            status="failed",
-            results_url=f"/sweeps/{sweep_id}",
-            points=[],
-            charts={},
-            error=str(exc),
-        )
-
-    _store_sweep_summary(summary)
+        SWEEP_JOB_STATE[sweep_id] = {
+            "status": "FAILED",
+            "error": str(exc),
+            "total_runs": total_runs,
+            "completed_runs": SWEEP_JOB_STATE.get(sweep_id, {}).get(
+                "completed_runs", 0
+            ),
+        }
+    finally:
+        session.close()
 
 def _simulate_wrapper(fmu: str, start_values: dict, current_user, db):
     req = schemas.SimulateRequest(
@@ -607,30 +660,73 @@ def get_simulation_summary(run_id: str, current_user: db_mod.ApiKey = Depends(ve
     return _get_simulation_summary(run_id)
 
 
-@app.post("/sweep", response_model=schemas.SweepResult)
+@app.post(
+    "/sweep",
+    response_model=schemas.SweepResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def start_sweep(
     request: schemas.SweepRequest,
     background_tasks: BackgroundTasks,
     current_user: db_mod.ApiKey = Depends(verify_api_key),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     sweep_id = str(uuid.uuid4())
-    pending = schemas.SweepSummary(
-        sweep_id=sweep_id,
-        status="pending",
-        results_url=f"/sweeps/{sweep_id}",
-        points=[],
-        charts={},
+    total_runs = 1 if request.sweep_parameters else 1
+    for param in request.sweep_parameters:
+        if not param.values:
+            raise HTTPException(400, f"Sweep parameter '{param.path}' has no values")
+        total_runs *= len(param.values)
+
+    results_url = f"/sweep/{sweep_id}/results"
+    SWEEP_JOB_STATE[sweep_id] = {
+        "status": "RUNNING",
+        "total_runs": total_runs,
+        "completed_runs": 0,
+    }
+
+    request_payload = copy.deepcopy(request.model_dump())
+    background_tasks.add_task(
+        _run_sweep_job,
+        sweep_id,
+        request_payload,
+        current_user.id,
+        total_runs,
     )
-    _store_sweep_summary(pending)
-    background_tasks.add_task(_run_sweep_task, sweep_id, request)
-    return schemas.SweepResult(
+
+    return schemas.SweepResponse(
         sweep_id=sweep_id,
-        status="pending",
-        results_url=f"/sweeps/{sweep_id}"
+        results_url=results_url,
     )
 
 
-@app.get("/sweeps/{sweep_id}", response_model=schemas.SweepSummary)
-def get_sweep_summary(sweep_id: str, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
-    return _get_sweep_summary(sweep_id)
+@app.get("/sweep/{sweep_id}/results")
+def get_sweep_results(
+    sweep_id: str,
+    current_user: db_mod.ApiKey = Depends(verify_api_key),
+    db=Depends(get_db),
+):
+    job_state = SWEEP_JOB_STATE.get(sweep_id)
+    if job_state:
+        status_value = job_state.get("status", "RUNNING")
+        if status_value == "RUNNING":
+            completed = job_state.get("completed_runs", 0)
+            total = job_state.get("total_runs", 0)
+            return {
+                "status": "RUNNING",
+                "progress": f"{completed}/{total} complete",
+                "completed_runs": completed,
+                "total_runs": total,
+            }
+        if status_value == "FAILED":
+            return {
+                "status": "FAILED",
+                "error": job_state.get("error"),
+                "completed_runs": job_state.get("completed_runs", 0),
+                "total_runs": job_state.get("total_runs", 0),
+            }
+        if status_value == "COMPLETED" and "result" in job_state:
+            return schemas.SweepResultData.model_validate(job_state["result"])
+
+    result = _load_sweep_result(sweep_id)
+    return result
