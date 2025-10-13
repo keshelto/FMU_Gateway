@@ -1,6 +1,6 @@
 import requests
-from typing import Dict, List, Optional
-from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 # Reuse schemas if possible, but define minimal here
 class InputSignal(BaseModel):
@@ -12,9 +12,11 @@ class SimulateRequest(BaseModel):
     fmu_id: str
     stop_time: float
     step: float = 0.001
-    start_values: Dict[str, float] = {}
-    input_signals: List[InputSignal] = []
-    kpis: List[str] = []
+    start_values: Dict[str, float] = Field(default_factory=dict)
+    input_signals: List[InputSignal] = Field(default_factory=list)
+    kpis: List[str] = Field(default_factory=list)
+    parameters: Optional[Dict[str, Any]] = None
+    drive_cycle: Optional[List[Dict[str, Any]]] = None
 
 class FMUGatewayClient:
     def __init__(self, base_url: str, api_key: Optional[str] = None):
