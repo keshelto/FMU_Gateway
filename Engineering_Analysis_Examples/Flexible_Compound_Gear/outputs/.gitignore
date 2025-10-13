@@ -1,0 +1,7 @@
+# Keep reference outputs in source control but ignore new runs by default
+*
+!.gitignore
+!reference_offline_run/
+!reference_offline_run/*.csv
+!reference_offline_run/*.json
+!reference_offline_run/*.md
