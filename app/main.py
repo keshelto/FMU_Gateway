@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 import app.schemas as schemas
@@ -7,15 +7,19 @@ import app.storage as storage
 import app.validation as validation
 import app.security as security
 import app.kpi as kpi
+import app.flexible_simulation as flexible
 import os
 import json
 import hashlib
 import glob
-from typing import Optional
+import itertools
+import io
+import base64
+from typing import Optional, Dict, List
 from redis import Redis
 import uuid
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi import Depends, HTTPException, status
+from fastapi import status
 import time
 import app.db as db_mod
 import stripe
@@ -73,6 +77,10 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
 app = FastAPI(title="FMU Gateway")
 
 
+SIMULATION_RESULTS: Dict[str, dict] = {}
+SWEEP_RESULTS: Dict[str, dict] = {}
+
+
 def _kw_to_w(value: float) -> float:
     return value * 1000.0
 
@@ -85,6 +93,183 @@ def _c_to_k(value: float) -> float:
     return value + 273.15
 
 
+def _store_simulation_summary(summary: schemas.SimulationSummary) -> schemas.SimulationSummary:
+    payload = summary.model_dump()
+    SIMULATION_RESULTS[summary.run_id] = payload
+    storage.save_simulation_summary(summary.run_id, payload)
+    return summary
+
+
+def _get_simulation_summary(run_id: str) -> schemas.SimulationSummary:
+    if run_id in SIMULATION_RESULTS:
+        payload = SIMULATION_RESULTS[run_id]
+    else:
+        try:
+            payload = storage.load_simulation_summary(run_id)
+        except FileNotFoundError:
+            raise HTTPException(404, "Simulation not found")
+        SIMULATION_RESULTS[run_id] = payload
+    return schemas.SimulationSummary.model_validate(payload)
+
+
+def _store_sweep_summary(summary: schemas.SweepSummary) -> schemas.SweepSummary:
+    payload = summary.model_dump()
+    SWEEP_RESULTS[summary.sweep_id] = payload
+    storage.save_sweep_summary(summary.sweep_id, payload)
+    return summary
+
+
+def _get_sweep_summary(sweep_id: str) -> schemas.SweepSummary:
+    if sweep_id in SWEEP_RESULTS:
+        payload = SWEEP_RESULTS[sweep_id]
+    else:
+        try:
+            payload = storage.load_sweep_summary(sweep_id)
+        except FileNotFoundError:
+            raise HTTPException(404, "Sweep not found")
+        SWEEP_RESULTS[sweep_id] = payload
+    return schemas.SweepSummary.model_validate(payload)
+
+
+def _run_structured_simulation(req: schemas.SimulateRequest) -> schemas.SimulationSummary:
+    parameters = req.parameters or schemas.SimulationParameters()
+    try:
+        drive_cycle = flexible.load_drive_cycle(req.drive_cycle)
+    except FileNotFoundError as exc:
+        raise HTTPException(400, str(exc))
+
+    history, summary_values = flexible.simulate(req, parameters, drive_cycle)
+    run_id = str(uuid.uuid4())
+    summary_url = f"/simulations/{run_id}"
+
+    key_results: Dict[str, float | str] = {}
+    for key, value in summary_values.items():
+        if isinstance(value, (int, float)):
+            key_results[key] = float(value)
+        else:
+            key_results[key] = str(value)
+
+    summary = schemas.SimulationSummary(
+        run_id=run_id,
+        status="ok",
+        key_results=key_results,
+        history=history,
+        provenance={
+            "model": "flexible_compound_gear_surrogate",
+            "drive_cycle": "custom" if req.drive_cycle else "default",
+        },
+        artifacts=[],
+        summary_url=summary_url,
+        parameters=parameters,
+        drive_cycle=drive_cycle,
+    )
+    return _store_simulation_summary(summary)
+
+
+def _assign_nested(data: dict, path: List[str], value: float) -> None:
+    current = data
+    for part in path[:-1]:
+        if part not in current or current[part] is None:
+            current[part] = {}
+        current = current[part]
+    current[path[-1]] = value
+
+
+def _create_load_vs_wear_chart(points: List[schemas.SweepPointResult]) -> str:
+    if not points:
+        return ""
+
+    selected_path = None
+    for candidate in points[0].parameter_values.keys():
+        if "preload" in candidate:
+            selected_path = candidate
+            break
+    if selected_path is None:
+        selected_path = next(iter(points[0].parameter_values.keys()))
+
+    series = []
+    for point in points:
+        x_value = point.parameter_values.get(selected_path)
+        wear_value = point.key_results.get("final_wear_depth")
+        if isinstance(wear_value, str):
+            try:
+                wear_value = float(wear_value)
+            except ValueError:
+                wear_value = 0.0
+        series.append((x_value, float(wear_value) * 1e6 if wear_value is not None else 0.0))
+
+    series.sort(key=lambda item: item[0])
+    xs = [item[0] for item in series]
+    ys = [item[1] for item in series]
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(xs, ys, marker="o")
+    ax.set_xlabel(f"{selected_path} (sweep value)")
+    ax.set_ylabel("Final wear depth [µm]")
+    ax.set_title("Load vs. Wear")
+    ax.grid(True, alpha=0.3)
+
+    buffer = io.BytesIO()
+    fig.tight_layout()
+    fig.savefig(buffer, format="png", dpi=200)
+    plt.close(fig)
+    buffer.seek(0)
+    return base64.b64encode(buffer.read()).decode("ascii")
+
+
+def _generate_post_processing(
+    request: schemas.SweepRequest, points: List[schemas.SweepPointResult]
+) -> Dict[str, str]:
+    charts: Dict[str, str] = {}
+    if "load_vs_wear" in request.post_processing:
+        charts["load_vs_wear"] = _create_load_vs_wear_chart(points)
+    return charts
+
+
+def _run_sweep_task(sweep_id: str, request: schemas.SweepRequest) -> None:
+    try:
+        parameter_paths = [param.path for param in request.parameters]
+        parameter_values = [param.values for param in request.parameters]
+
+        points: List[schemas.SweepPointResult] = []
+        for combo in itertools.product(*parameter_values):
+            req_payload = request.base_request.model_dump()
+            current_values: Dict[str, float] = {}
+            for path, value in zip(parameter_paths, combo):
+                _assign_nested(req_payload, path.split("."), value)
+                current_values[path] = value
+            sweep_req = schemas.SimulateRequest.model_validate(req_payload)
+            summary = _run_structured_simulation(sweep_req)
+            points.append(
+                schemas.SweepPointResult(
+                    run_id=summary.run_id,
+                    parameter_values=current_values,
+                    key_results=summary.key_results,
+                )
+            )
+
+        charts = _generate_post_processing(request, points)
+        summary = schemas.SweepSummary(
+            sweep_id=sweep_id,
+            status="complete",
+            results_url=f"/sweeps/{sweep_id}",
+            points=points,
+            charts=charts,
+        )
+    except Exception as exc:
+        summary = schemas.SweepSummary(
+            sweep_id=sweep_id,
+            status="failed",
+            results_url=f"/sweeps/{sweep_id}",
+            points=[],
+            charts={},
+            error=str(exc),
+        )
+
+    _store_sweep_summary(summary)
+
 def _simulate_wrapper(fmu: str, start_values: dict, current_user, db):
     req = schemas.SimulateRequest(
         fmu_id=f"msl:{fmu}",
@@ -92,9 +277,21 @@ def _simulate_wrapper(fmu: str, start_values: dict, current_user, db):
         step=0.1,
         start_values=start_values,
     )
-    result = run_simulation(req, current_user, db)
-    final = {k: (v[-1] if v else None) for k, v in result.get("y", {}).items()}
-    return {"status": result.get("status"), "final_values": final, "time": result.get("t", [])}
+    response = run_simulation(req, current_user, db)
+    summary = _get_simulation_summary(response.run_id)
+    history = summary.history
+    final = {}
+    for name, series in history.items():
+        if name == "time":
+            continue
+        if series:
+            final[name] = series[-1]
+    return {
+        "status": response.status,
+        "final_values": final,
+        "time": history.get("time", []),
+        "key_results": response.key_results,
+    }
 
 
 class CoolingSystemRequest(BaseModel):
@@ -262,7 +459,7 @@ def get_library(query: Optional[str] = None, current_user: db_mod.ApiKey = Depen
             continue  # Skip invalid FMUs
     return models
 
-@app.post("/simulate")
+@app.post("/simulate", response_model=schemas.SimulationResult)
 def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
     import hashlib
     if req.quote_only:
@@ -271,7 +468,25 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
             content=schemas.PaymentResponse(status="quote_only", description="Simulation payment quote", next_step="Submit payment_token and payment_method to proceed").model_dump()
         )
 
-    req_dump = json.dumps(req.model_dump(exclude={'payment_token', 'payment_method', 'quote_only'}), sort_keys=True)  # Exclude payment for cache key
+    structured_mode = bool(
+        req.parameters
+        or req.drive_cycle
+        or req.fmu_id.startswith("structured:")
+    )
+
+    if structured_mode:
+        start_time = time.time()
+        summary = _run_structured_simulation(req)
+        duration = int((time.time() - start_time) * 1000)
+        usage = db_mod.Usage(api_key_id=current_user.id, fmu_id=req.fmu_id, duration_ms=duration)
+        db.add(usage)
+        db.commit()
+        return schemas.SimulationResult.model_validate(summary.model_dump())
+
+    req_dump = json.dumps(
+        req.model_dump(exclude={'payment_token', 'payment_method', 'quote_only'}),
+        sort_keys=True
+    )
     cache_key = f"sim:{req.fmu_id}:{hashlib.sha256(req_dump.encode()).hexdigest()}"
     cached = None
     if r is not None:
@@ -280,15 +495,14 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         except Exception as e:
             print(f"Redis get failed: {e}. Skipping cache.")
     if cached:
-        return json.loads(cached)
-    
-    # Payment check for A2A/402
+        return schemas.SimulationResult.model_validate(json.loads(cached))
+
     if STRIPE_ENABLED and not req.payment_token and current_user.stripe_customer_id:
         return JSONResponse(
             status_code=402,
             content=schemas.PaymentResponse().model_dump()
         )
-    
+
     if req.fmu_id.startswith('msl:'):
         model_name = req.fmu_id.split(':', 1)[1]
         path = LIBRARY_DIR / 'msl' / f"{model_name}.fmu"
@@ -309,7 +523,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         validation.validate_simulation_output(result, meta)
         t = result['time'].tolist()
         y = {name: result[name].tolist() for name in result.dtype.names if name != 'time'}
-        kpis = {}
+        kpis: Dict[str, float] = {}
         for kp in req.kpis:
             kpis[kp] = kpi.compute_kpi(result, kp)
         provenance = {
@@ -317,32 +531,43 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
             "guid": meta.guid,
             "sha256": sha256
         }
-        response = schemas.SimulateResponse(
-            id=req.fmu_id,
+        run_id = str(uuid.uuid4())
+        summary_url = f"/simulations/{run_id}"
+        history = {"time": t, **y}
+        key_results: Dict[str, float | str] = {}
+        if t:
+            key_results["final_time"] = float(t[-1])
+        for name, values in y.items():
+            if values:
+                key_results[f"final_{name}"] = float(values[-1])
+        for kp, value in kpis.items():
+            key_results[kp] = float(value)
+
+        summary = schemas.SimulationSummary(
+            run_id=run_id,
             status="ok",
-            t=t,
-            y=y,
-            kpis=kpis,
-            provenance=provenance
-        ).model_dump()
-        if len(json.dumps(response)) > 5 * 1024 * 1024:
-            raise HTTPException(413, "Response too large; downsample or select fewer variables")
+            key_results=key_results,
+            history=history,
+            provenance=provenance,
+            artifacts=[],
+            summary_url=summary_url,
+        )
+        _store_simulation_summary(summary)
+
+        response = schemas.SimulationResult.model_validate(summary.model_dump())
         if r is not None:
             try:
-                r.set(cache_key, json.dumps(response), ex=3600)
+                r.set(cache_key, json.dumps(response.model_dump()), ex=3600)
             except Exception as e:
                 print(f"Redis set failed: {e}. Cache not saved.")
-        
-        # Log usage
+
         usage = db_mod.Usage(api_key_id=current_user.id, fmu_id=req.fmu_id, duration_ms=duration)
         db.add(usage)
         db.commit()
-        
-        # Charge for simulation (A2A compatible: use token if provided)
+
         if current_user.stripe_customer_id:
             stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
             if req.payment_token:
-                # Assume Google Pay token via Stripe (verify/setup payment method)
                 try:
                     metadata = {'payment_method': req.payment_method or 'google_pay'}
                     payment_method = stripe.PaymentMethod.create(
@@ -350,7 +575,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
                         card={'token': req.payment_token}
                     )
                     stripe.PaymentIntent.create(
-                        amount=1,  # cents
+                        amount=1,
                         currency='usd',
                         customer=current_user.stripe_customer_id,
                         payment_method=payment_method.id,
@@ -360,7 +585,6 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
                 except stripe.error.StripeError:
                     raise HTTPException(402, "Payment failed")
             else:
-                # Existing charge
                 stripe.Charge.create(
                     amount=1,
                     currency='usd',
@@ -376,3 +600,37 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         raise HTTPException(422, str(e))
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@app.get("/simulations/{run_id}", response_model=schemas.SimulationSummary)
+def get_simulation_summary(run_id: str, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
+    return _get_simulation_summary(run_id)
+
+
+@app.post("/sweep", response_model=schemas.SweepResult)
+def start_sweep(
+    request: schemas.SweepRequest,
+    background_tasks: BackgroundTasks,
+    current_user: db_mod.ApiKey = Depends(verify_api_key),
+    db=Depends(get_db)
+):
+    sweep_id = str(uuid.uuid4())
+    pending = schemas.SweepSummary(
+        sweep_id=sweep_id,
+        status="pending",
+        results_url=f"/sweeps/{sweep_id}",
+        points=[],
+        charts={},
+    )
+    _store_sweep_summary(pending)
+    background_tasks.add_task(_run_sweep_task, sweep_id, request)
+    return schemas.SweepResult(
+        sweep_id=sweep_id,
+        status="pending",
+        results_url=f"/sweeps/{sweep_id}"
+    )
+
+
+@app.get("/sweeps/{sweep_id}", response_model=schemas.SweepSummary)
+def get_sweep_summary(sweep_id: str, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
+    return _get_sweep_summary(sweep_id)

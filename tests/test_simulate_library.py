@@ -19,7 +19,12 @@ def test_simulate_library(client, stripe_stub):
     assert resp.status_code == 200
     result = resp.json()
     assert result["status"] == "ok"
-    assert len(result["t"]) > 0
-    assert "h_rms" in result["kpis"]
+    assert "summary_url" in result
+    assert "h_rms" in result["key_results"]
+    summary_resp = client.get(result["summary_url"], headers={"Authorization": f"Bearer {key}"})
+    assert summary_resp.status_code == 200
+    summary = summary_resp.json()
+    assert "history" in summary
+    assert len(summary["history"].get("time", [])) > 0
     new_records = stripe_stub.records[before:]
     assert any(entry["path"] == "/v1/payment_intents" for entry in new_records)

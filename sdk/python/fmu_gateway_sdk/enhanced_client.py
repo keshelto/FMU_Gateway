@@ -3,7 +3,7 @@ import requests
 import hashlib
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -23,6 +23,8 @@ class SimulateRequest(BaseModel):
     payment_token: Optional[str] = None
     payment_method: Optional[str] = None
     quote_only: Optional[bool] = None
+    parameters: Optional[Dict[str, Any]] = None
+    drive_cycle: Optional[List[Dict[str, Any]]] = None
 
 
 class EnhancedFMUGatewayClient:
