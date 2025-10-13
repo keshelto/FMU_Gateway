@@ -129,35 +129,50 @@ class Variable(BaseModel):
 
 
 class SweepParameter(BaseModel):
-    path: str
+    """Defines a parameter to sweep using a dot-notation path."""
+
+    path: str = Field(..., example="start_values.heatLoad")
     values: List[float]
 
 
+class XYPlotRequest(BaseModel):
+    chart_type: str = "xy_plot"
+    chart_title: str
+    x_axis_param: str = Field(..., example="start_values.heatLoad")
+    y_axis_kpi: str = Field(..., example="kpis.y_max")
+
+
 class SweepRequest(BaseModel):
+    """A request to run a parameter sweep."""
+
     base_request: SimulateRequest
-    parameters: List[SweepParameter]
-    post_processing: List[str] = Field(default_factory=list)
+    sweep_parameters: List[SweepParameter]
+    post_processing: List[XYPlotRequest] = Field(default_factory=list)
 
 
-class SweepResult(BaseModel):
+class SweepResponse(BaseModel):
+    """The immediate response after submitting a sweep job."""
+
     sweep_id: str
-    status: str
+    status: str = "ACCEPTED"
     results_url: str
 
 
-class SweepPointResult(BaseModel):
-    run_id: str
-    parameter_values: Dict[str, float]
-    key_results: Dict[str, float | str]
+class SingleRunResult(BaseModel):
+    parameters: Dict[str, float]
+    kpis: Dict[str, float]
 
 
-class SweepSummary(BaseModel):
+class GeneratedChart(BaseModel):
+    chart_title: str
+    image_base64: str
+
+
+class SweepResultData(BaseModel):
     sweep_id: str
-    status: str
-    results_url: str
-    points: List[SweepPointResult] = Field(default_factory=list)
-    charts: Dict[str, str] = Field(default_factory=dict)
-    error: Optional[str] = None
+    status: str = "COMPLETED"
+    results: List[SingleRunResult]
+    charts: List[GeneratedChart]
 
 
 class PaymentResponse(BaseModel):
