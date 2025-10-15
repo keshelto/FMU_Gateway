@@ -177,6 +177,26 @@ def _assign_nested(data: dict, path: List[str], value: float) -> None:
     current[path[-1]] = value
 
 
+def _flatten_numeric_values(data, prefix: str = "") -> Dict[str, float]:
+    values: Dict[str, float] = {}
+    if isinstance(data, dict):
+        for key, value in data.items():
+            path = f"{prefix}.{key}" if prefix else key
+            values.update(_flatten_numeric_values(value, path))
+    elif isinstance(data, list):
+        for index, value in enumerate(data):
+            path = f"{prefix}.{index}" if prefix else str(index)
+            values.update(_flatten_numeric_values(value, path))
+    else:
+        try:
+            numeric_value = float(data)
+        except (TypeError, ValueError):
+            return values
+        if prefix:
+            values[prefix] = numeric_value
+    return values
+
+
 def _resolve_run_value(run: schemas.SingleRunResult, path: str) -> Optional[float]:
     if path in run.parameters:
         return run.parameters[path]
@@ -266,26 +286,22 @@ def _run_sweep_job(
 
         parameter_paths = [param.path for param in sweep_request.sweep_parameters]
         parameter_values = [param.values for param in sweep_request.sweep_parameters]
-
-        if parameter_values:
-            combos = list(itertools.product(*parameter_values))
-        else:
-            combos = [tuple()]
+        combos = (
+            itertools.product(*parameter_values)
+            if parameter_values
+            else [tuple()]
+        )
 
         runs: List[schemas.SingleRunResult] = []
         for idx, combo in enumerate(combos, start=1):
             req_payload = copy.deepcopy(sweep_request.base_request.model_dump())
-            parameters: Dict[str, float] = {}
             for path, value in zip(parameter_paths, combo):
                 _assign_nested(req_payload, path.split("."), value)
-                try:
-                    parameters[path] = float(value)
-                except (TypeError, ValueError):
-                    continue
 
             simulate_request = schemas.SimulateRequest.model_validate(req_payload)
             response = run_simulation(simulate_request, current_user, session)
             numeric_kpis = _extract_numeric_key_results(response.key_results)
+            parameters = _flatten_numeric_values(req_payload)
             runs.append(schemas.SingleRunResult(parameters=parameters, kpis=numeric_kpis))
 
             job_state = SWEEP_JOB_STATE.setdefault(
@@ -305,13 +321,17 @@ def _run_sweep_job(
             charts=charts,
         )
         _store_sweep_result(result)
+        started_at = SWEEP_JOB_STATE.get(sweep_id, {}).get("started_at")
         SWEEP_JOB_STATE[sweep_id] = {
             "status": "COMPLETED",
             "total_runs": total_runs,
             "completed_runs": total_runs,
             "result": result.model_dump(),
+            "started_at": started_at,
+            "completed_at": time.time(),
         }
     except Exception as exc:
+        started_at = SWEEP_JOB_STATE.get(sweep_id, {}).get("started_at")
         SWEEP_JOB_STATE[sweep_id] = {
             "status": "FAILED",
             "error": str(exc),
@@ -319,6 +339,8 @@ def _run_sweep_job(
             "completed_runs": SWEEP_JOB_STATE.get(sweep_id, {}).get(
                 "completed_runs", 0
             ),
+            "started_at": started_at,
+            "completed_at": time.time(),
         }
     finally:
         session.close()
@@ -672,7 +694,7 @@ def start_sweep(
     db=Depends(get_db),
 ):
     sweep_id = str(uuid.uuid4())
-    total_runs = 1 if request.sweep_parameters else 1
+    total_runs = 1
     for param in request.sweep_parameters:
         if not param.values:
             raise HTTPException(400, f"Sweep parameter '{param.path}' has no values")
@@ -683,6 +705,7 @@ def start_sweep(
         "status": "RUNNING",
         "total_runs": total_runs,
         "completed_runs": 0,
+        "started_at": time.time(),
     }
 
     request_payload = copy.deepcopy(request.model_dump())
@@ -717,6 +740,7 @@ def get_sweep_results(
                 "progress": f"{completed}/{total} complete",
                 "completed_runs": completed,
                 "total_runs": total,
+                "started_at": job_state.get("started_at"),
             }
         if status_value == "FAILED":
             return {
@@ -724,6 +748,8 @@ def get_sweep_results(
                 "error": job_state.get("error"),
                 "completed_runs": job_state.get("completed_runs", 0),
                 "total_runs": job_state.get("total_runs", 0),
+                "started_at": job_state.get("started_at"),
+                "completed_at": job_state.get("completed_at"),
             }
         if status_value == "COMPLETED" and "result" in job_state:
             return schemas.SweepResultData.model_validate(job_state["result"])
