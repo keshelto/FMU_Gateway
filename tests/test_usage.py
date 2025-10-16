@@ -1,26 +1,34 @@
-import pytest
 from app.db import Usage, ApiKey, SessionLocal
+from tests.payment_utils import purchase_token
+
 
 def test_usage_logged(client, stripe_stub):
     baseline = len(stripe_stub.records)
     resp = client.post("/keys")
-    key_data = resp.json()
-    key = key_data["key"]
+    key = resp.json()["key"]
     assert len(stripe_stub.records) == baseline + 1
 
-    # Simulate
-    before = len(stripe_stub.records)
-
-    resp = client.post("/simulate", headers={"Authorization": f"Bearer {key}"}, json={
+    simulate_payload = {
         "fmu_id": "msl:BouncingBall",
-        "stop_time": 0.1,  # short
+        "stop_time": 0.1,
         "step": 0.01,
-        "payment_token": "tok_visa",
-        "payment_method": "google_pay"
-    })
-    assert resp.status_code == 200
+    }
+
+    before = len(stripe_stub.records)
+    token, _ = purchase_token(client, key, simulate_payload)
+
     new_records = stripe_stub.records[before:]
-    assert any(entry["path"] == "/v1/payment_intents" for entry in new_records)
+    assert any(entry["path"] == "/v1/checkout/sessions" for entry in new_records)
+
+    paid_payload = dict(simulate_payload)
+    paid_payload["payment_token"] = token
+
+    resp = client.post(
+        "/simulate",
+        headers={"Authorization": f"Bearer {key}"},
+        json=paid_payload,
+    )
+    assert resp.status_code == 200
 
     # Check DB
     db = SessionLocal()

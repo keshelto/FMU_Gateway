@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, UploadFile, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 import app.schemas as schemas
@@ -16,6 +16,8 @@ import itertools
 import io
 import base64
 import copy
+from datetime import datetime, timedelta
+import secrets
 from typing import Optional, Dict, List
 from redis import Redis
 import uuid
@@ -42,7 +44,241 @@ except Exception as e:
 STRIPE_ENABLED = os.getenv('STRIPE_ENABLED', 'true').lower() == 'true'
 REQUIRE_AUTH = os.getenv('REQUIRE_AUTH', 'true').lower() == 'true'
 
+SIMULATION_PRICE_CENTS = int(os.getenv('STRIPE_SIMULATION_PRICE_CENTS', '100'))
+SIMULATION_CURRENCY = os.getenv('STRIPE_SIMULATION_CURRENCY', 'usd')
+PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')
+SUCCESS_URL_TEMPLATE = os.getenv('STRIPE_SUCCESS_URL')
+CANCEL_URL_TEMPLATE = os.getenv('STRIPE_CANCEL_URL')
+PENDING_SESSION_TTL_MINUTES = int(os.getenv('PENDING_SESSION_TTL_MINUTES', '60'))
+CHECKOUT_TOKEN_TTL_MINUTES = int(os.getenv('CHECKOUT_TOKEN_TTL_MINUTES', '30'))
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
+
 security = HTTPBearer(auto_error=False)  # Don't auto-error to allow optional auth
+
+
+def _success_url_template() -> str:
+    base = SUCCESS_URL_TEMPLATE or f"{PUBLIC_BASE_URL.rstrip('/')}/payments/success?session_id={{CHECKOUT_SESSION_ID}}"
+    return base
+
+
+def _cancel_url_template() -> str:
+    base = CANCEL_URL_TEMPLATE or f"{PUBLIC_BASE_URL.rstrip('/')}/payments/cancelled"
+    return base
+
+
+def _ensure_stripe_customer(api_key_obj: db_mod.ApiKey, db) -> Optional[str]:
+    if api_key_obj.stripe_customer_id:
+        return api_key_obj.stripe_customer_id
+
+    stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+    if not stripe.api_key:
+        raise HTTPException(500, "Stripe secret key not configured")
+
+    try:
+        customer = stripe.Customer.create()
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(502, f"Stripe error: {message}")
+
+    api_key_obj.stripe_customer_id = customer['id']
+    db.commit()
+    db.refresh(api_key_obj)
+    return api_key_obj.stripe_customer_id
+
+
+def _reuse_pending_session(db, api_key_id: int):
+    now = datetime.utcnow()
+    return (
+        db.query(db_mod.PaymentToken)
+        .filter(
+            db_mod.PaymentToken.api_key_id == api_key_id,
+            db_mod.PaymentToken.status == 'pending',
+            db_mod.PaymentToken.expires_at > now,
+        )
+        .order_by(db_mod.PaymentToken.created_at.desc())
+        .first()
+    )
+
+
+def _latest_ready_token(db, api_key_id: int):
+    now = datetime.utcnow()
+    return (
+        db.query(db_mod.PaymentToken)
+        .filter(
+            db_mod.PaymentToken.api_key_id == api_key_id,
+            db_mod.PaymentToken.status == 'ready',
+            db_mod.PaymentToken.expires_at > now,
+            db_mod.PaymentToken.consumed_at.is_(None),
+        )
+        .order_by(db_mod.PaymentToken.created_at.desc())
+        .first()
+    )
+
+
+def _create_checkout_session(
+    db,
+    api_key_obj: db_mod.ApiKey,
+    fmu_id: Optional[str],
+    success_url: Optional[str] = None,
+    cancel_url: Optional[str] = None,
+):
+    stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+    if not stripe.api_key:
+        raise HTTPException(500, "Stripe secret key not configured")
+
+    success_url = success_url or _success_url_template()
+    cancel_url = cancel_url or _cancel_url_template()
+
+    metadata = {"api_key_id": str(api_key_obj.id)}
+    if fmu_id:
+        metadata["fmu_id"] = fmu_id
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": SIMULATION_CURRENCY,
+                        "product_data": {"name": f"FMU Simulation ({fmu_id or 'custom'})"},
+                        "unit_amount": SIMULATION_PRICE_CENTS,
+                    },
+                    "quantity": 1,
+                }
+            ],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            customer=api_key_obj.stripe_customer_id or None,
+            allow_promotion_codes=False,
+            metadata=metadata,
+        )
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(502, f"Stripe error: {message}")
+
+    expires_at = datetime.utcnow() + timedelta(minutes=PENDING_SESSION_TTL_MINUTES)
+
+    record = db_mod.PaymentToken(
+        api_key_id=api_key_obj.id,
+        session_id=session['id'],
+        checkout_url=session['url'],
+        status='pending',
+        fmu_id=fmu_id,
+        amount_cents=SIMULATION_PRICE_CENTS,
+        currency=SIMULATION_CURRENCY,
+        expires_at=expires_at,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def _payment_amount() -> float:
+    return SIMULATION_PRICE_CENTS / 100.0
+
+
+def _build_payment_response(token_record: db_mod.PaymentToken) -> schemas.PaymentResponse:
+    amount = token_record.amount_cents / 100.0 if token_record.amount_cents else _payment_amount()
+    return schemas.PaymentResponse(
+        amount=amount,
+        currency=token_record.currency,
+        checkout_url=token_record.checkout_url,
+        session_id=token_record.session_id,
+    )
+
+
+def _claim_payment_token(db, api_key_id: int, token_value: Optional[str]) -> Optional[db_mod.PaymentToken]:
+    if not token_value:
+        return None
+
+    now = datetime.utcnow()
+    record = (
+        db.query(db_mod.PaymentToken)
+        .filter(
+            db_mod.PaymentToken.api_key_id == api_key_id,
+            db_mod.PaymentToken.token == token_value,
+        )
+        .first()
+    )
+
+    if not record or record.consumed_at is not None or record.expires_at < now or record.status != 'ready':
+        return None
+
+    record.status = 'consumed'
+    record.consumed_at = datetime.utcnow()
+    db.commit()
+    return record
+
+
+def _complete_checkout_session(db, session_data: dict) -> Optional[db_mod.PaymentToken]:
+    session_id = session_data.get("id")
+    if not session_id:
+        return None
+
+    record = (
+        db.query(db_mod.PaymentToken)
+        .filter(db_mod.PaymentToken.session_id == session_id)
+        .first()
+    )
+
+    metadata = session_data.get("metadata", {}) or {}
+    api_key_id = metadata.get("api_key_id")
+    fmu_id = metadata.get("fmu_id")
+
+    if record is None:
+        if not api_key_id:
+            return None
+        try:
+            api_key_id_int = int(api_key_id)
+        except (TypeError, ValueError):
+            return None
+        record = db_mod.PaymentToken(
+            api_key_id=api_key_id_int,
+            session_id=session_id,
+            checkout_url=session_data.get("url"),
+            status='pending',
+            fmu_id=fmu_id,
+            amount_cents=SIMULATION_PRICE_CENTS,
+            currency=session_data.get("currency", SIMULATION_CURRENCY),
+            expires_at=datetime.utcnow() + timedelta(minutes=PENDING_SESSION_TTL_MINUTES),
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+    token_value = secrets.token_urlsafe(32)
+    record.token = token_value
+    record.status = 'ready'
+    record.expires_at = datetime.utcnow() + timedelta(minutes=CHECKOUT_TOKEN_TTL_MINUTES)
+    if not record.checkout_url:
+        record.checkout_url = session_data.get("url")
+    if fmu_id and not record.fmu_id:
+        record.fmu_id = fmu_id
+    if session_data.get("currency"):
+        record.currency = session_data.get("currency")
+    amount_total = session_data.get("amount_total")
+    if isinstance(amount_total, int):
+        record.amount_cents = amount_total
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def _expire_checkout_session(db, session_data: dict) -> None:
+    session_id = session_data.get("id")
+    if not session_id:
+        return
+
+    record = (
+        db.query(db_mod.PaymentToken)
+        .filter(db_mod.PaymentToken.session_id == session_id)
+        .first()
+    )
+    if record:
+        record.status = 'expired'
+        record.expires_at = datetime.utcnow()
+        db.commit()
 
 def get_db():
     db = db_mod.SessionLocal()
@@ -439,6 +675,33 @@ def root():
 def health():
     return {"status": "healthy", "version": "1.0.0"}
 
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request, db=Depends(get_db)):
+    payload = await request.body()
+    signature = request.headers.get("Stripe-Signature")
+
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+        else:
+            event = json.loads(payload.decode())
+    except ValueError:
+        raise HTTPException(400, "Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(400, "Invalid signature")
+
+    event_type = event.get("type")
+    data_object = event.get("data", {}).get("object", {})
+
+    if event_type == "checkout.session.completed":
+        _complete_checkout_session(db, data_object)
+    elif event_type == "checkout.session.expired":
+        _expire_checkout_session(db, data_object)
+
+    return {"received": True}
+
+
 @app.post("/keys")
 def create_key(db=Depends(get_db)):
     key = str(uuid.uuid4())
@@ -446,13 +709,74 @@ def create_key(db=Depends(get_db)):
     db.add(api_key_obj)
     db.commit()
     db.refresh(api_key_obj)
-    # Create Stripe customer
-    stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-    if stripe.api_key:
-        customer = stripe.Customer.create()
-        api_key_obj.stripe_customer_id = customer.id
-        db.commit()
+    # Ensure Stripe customer exists when Stripe integration is enabled
+    if STRIPE_ENABLED:
+        try:
+            _ensure_stripe_customer(api_key_obj, db)
+        except HTTPException:
+            # If Stripe configuration is missing we still return the key so
+            # that local development workflows continue to function.
+            pass
     return {"key": key}
+
+
+@app.post("/pay", response_model=schemas.PaymentResponse)
+def create_payment_session(
+    request: schemas.PayRequest,
+    current_user: db_mod.ApiKey = Depends(verify_api_key),
+    db=Depends(get_db),
+):
+    if not STRIPE_ENABLED:
+        raise HTTPException(400, "Stripe payments are disabled")
+
+    _ensure_stripe_customer(current_user, db)
+
+    reusable = _reuse_pending_session(db, current_user.id)
+    if reusable and (not request.fmu_id or reusable.fmu_id == request.fmu_id):
+        return _build_payment_response(reusable)
+
+    record = _create_checkout_session(
+        db,
+        current_user,
+        request.fmu_id,
+        success_url=request.success_url,
+        cancel_url=request.cancel_url,
+    )
+    return _build_payment_response(record)
+
+
+@app.get("/payments/checkout/{session_id}", response_model=schemas.PaymentTokenStatus)
+def retrieve_payment_token(
+    session_id: str,
+    current_user: db_mod.ApiKey = Depends(verify_api_key),
+    db=Depends(get_db),
+):
+    record = (
+        db.query(db_mod.PaymentToken)
+        .filter(db_mod.PaymentToken.session_id == session_id)
+        .first()
+    )
+    if not record or record.api_key_id != current_user.id:
+        raise HTTPException(404, "Payment session not found")
+
+    if record.consumed_at is not None:
+        raise HTTPException(410, "Payment token already used")
+
+    now = datetime.utcnow()
+    if record.expires_at < now and record.status != 'consumed':
+        record.status = 'expired'
+        db.commit()
+        raise HTTPException(410, "Payment token expired")
+
+    if not record.token or record.status != 'ready':
+        raise HTTPException(404, "Payment not completed yet")
+
+    return schemas.PaymentTokenStatus(
+        session_id=session_id,
+        payment_token=record.token,
+        expires_at=record.expires_at,
+    )
+
 
 @app.post("/fmus")
 async def upload_fmu(file: UploadFile, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
@@ -540,7 +864,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
     if req.quote_only:
         return JSONResponse(
             status_code=402,
-            content=schemas.PaymentResponse(status="quote_only", description="Simulation payment quote", next_step="Submit payment_token and payment_method to proceed").model_dump()
+            content=schemas.PaymentResponse(status="quote_only", description="Simulation payment quote", next_step="Use /pay to create a checkout session and resubmit with the issued token").model_dump()
         )
 
     structured_mode = bool(
@@ -572,11 +896,32 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
     if cached:
         return schemas.SimulationResult.model_validate(json.loads(cached))
 
-    if STRIPE_ENABLED and not req.payment_token and current_user.stripe_customer_id:
-        return JSONResponse(
-            status_code=402,
-            content=schemas.PaymentResponse().model_dump()
-        )
+    consumed_token: Optional[db_mod.PaymentToken] = None
+    if STRIPE_ENABLED:
+        claimed_token = _claim_payment_token(db, current_user.id, req.payment_token)
+        if claimed_token is None:
+            error_code = None
+            if req.payment_token:
+                error_code = "invalid_or_expired_payment_token"
+
+            ready_token = _latest_ready_token(db, current_user.id)
+            if ready_token:
+                response_payload = _build_payment_response(ready_token)
+                response_payload.error = error_code or "awaiting_payment_confirmation"
+                return JSONResponse(status_code=402, content=response_payload.model_dump())
+
+            reusable = _reuse_pending_session(db, current_user.id)
+            if not reusable:
+                _ensure_stripe_customer(current_user, db)
+                reusable = _create_checkout_session(db, current_user, req.fmu_id)
+            response_payload = _build_payment_response(reusable)
+            response_payload.error = error_code or "complete_checkout"
+            return JSONResponse(status_code=402, content=response_payload.model_dump())
+
+        consumed_token = claimed_token
+        if not consumed_token.fmu_id:
+            consumed_token.fmu_id = req.fmu_id
+            db.commit()
 
     if req.fmu_id.startswith('msl:'):
         model_name = req.fmu_id.split(':', 1)[1]
@@ -640,32 +985,6 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         db.add(usage)
         db.commit()
 
-        if current_user.stripe_customer_id:
-            stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-            if req.payment_token:
-                try:
-                    metadata = {'payment_method': req.payment_method or 'google_pay'}
-                    payment_method = stripe.PaymentMethod.create(
-                        type='card',
-                        card={'token': req.payment_token}
-                    )
-                    stripe.PaymentIntent.create(
-                        amount=1,
-                        currency='usd',
-                        customer=current_user.stripe_customer_id,
-                        payment_method=payment_method.id,
-                        confirm=True,
-                        metadata=metadata
-                    )
-                except stripe.error.StripeError:
-                    raise HTTPException(402, "Payment failed")
-            else:
-                stripe.Charge.create(
-                    amount=1,
-                    currency='usd',
-                    customer=current_user.stripe_customer_id,
-                    description=f'FMU Simulation {req.fmu_id}'
-                )
         return response
     except ValidationError as e:
         raise HTTPException(400, str(e))

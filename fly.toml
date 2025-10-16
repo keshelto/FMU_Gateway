@@ -12,6 +12,10 @@ primary_region = 'lhr'
   DATABASE_URL = ''
   REDIS_URL = 'redis://localhost:6379'
   STRIPE_SECRET_KEY = ''
+  STRIPE_ENABLED = 'true'
+  STRIPE_SIMULATION_PRICE_CENTS = '100'
+  STRIPE_SIMULATION_CURRENCY = 'usd'
+  PUBLIC_BASE_URL = 'https://fmu-gateway-long-pine-7571.fly.dev'
   FMU_GATEWAY_DB_PATH = '/data/fmu_gateway.sqlite3'
 
 [http_service]
