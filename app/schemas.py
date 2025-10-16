@@ -1,4 +1,5 @@
 import math
+from datetime import datetime
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -85,8 +86,8 @@ class SimulateRequest(BaseModel):
     start_values: Dict[str, float] = Field(default_factory=dict)
     input_signals: List[InputSignal] = Field(default_factory=list)
     kpis: List[str] = Field(default_factory=list)
-    payment_token: Optional[str] = None  # Stripe/Google Pay token
-    payment_method: Optional[str] = None  # e.g., 'google_pay', 'stripe_card'
+    payment_token: Optional[str] = None  # Session token issued after Stripe checkout
+    payment_method: Optional[str] = None  # Deprecated: maintained for backwards compatibility
     quote_only: Optional[bool] = None  # Allows agents to request a payment quote (HTTP 402)
     parameters: Optional[SimulationParameters] = None
     drive_cycle: Optional[List[DriveCyclePoint]] = None
@@ -177,8 +178,23 @@ class SweepResultData(BaseModel):
 
 class PaymentResponse(BaseModel):
     status: str = "payment_required"
-    amount: float = 0.01
+    amount: float = 1.0
     currency: str = "usd"
-    methods: List[str] = ["google_pay", "stripe_card"]
+    methods: List[str] = Field(default_factory=lambda: ["stripe_checkout"])
     description: str = "FMU Simulation Charge"
-    next_step: str = "Provide payment_token and payment_method to execute the simulation"
+    next_step: str = "Complete checkout and call /payments/checkout/{session_id} to retrieve your simulation token"
+    checkout_url: Optional[str] = None
+    session_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PayRequest(BaseModel):
+    fmu_id: str
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+class PaymentTokenStatus(BaseModel):
+    session_id: str
+    payment_token: str
+    expires_at: datetime

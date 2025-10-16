@@ -19,9 +19,10 @@ This automatically:
 **Expected time: 10-20 seconds**
 
 Need an upfront payment quote before executing? Add `--quote` to receive an HTTP
-402 response with amount, supported methods, and next steps. When you have a
-Google Pay or Stripe token, reuse the same command with
-`--payment-token <token> --payment-method google_pay` to execute and charge.
+402 response with the amount, Stripe Checkout link, and next steps. Complete the
+checkout using the returned `checkout_url` (or the `/pay` endpoint), call
+`/payments/checkout/{session_id}` to retrieve the issued simulation token, and
+rerun with `--payment-token <token>` to execute the paid simulation.
 
 See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
 
@@ -32,7 +33,7 @@ See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
 1. Start the gateway locally (`uvicorn app.main:app --host 0.0.0.0 --port 8000`).
 2. Quote the job: `python run_fmu_simulation.py --auto --fmu app/library/msl/BouncingBall.fmu --quote`.
 3. Generate a customer report: `python Engineering_Analysis_Examples/Scav_Capacity/run_example.py`.
-4. Collect payment and rerun with `--payment-token` once authorised.
+4. Complete checkout (Stripe) and rerun with the token from `/payments/checkout/{session_id}`.
 
 The analysis script stores JSON + Markdown briefs (and a PNG overview chart)
 inside `Engineering_Analysis_Examples/Scav_Capacity/outputs/`. Those artefacts
@@ -155,21 +156,24 @@ cURL example with auth:
 
 ### Fly.io Setup for Phase 2
 1. Postgres: `fly postgres create --name fmu-gateway-db` then `fly postgres attach fmu-gateway-db --app fmu-gateway`
-2. Secrets: `fly secrets set DATABASE_URL=$(fly postgres config show -a fmu-gateway-db | grep PRIMARY) STRIPE_SECRET_KEY=sk_...`
+2. Secrets: `fly secrets set DATABASE_URL=$(fly postgres config show -a fmu-gateway-db | grep PRIMARY) STRIPE_SECRET_KEY=sk_... STRIPE_WEBHOOK_SECRET=whsec_... STRIPE_ENABLED=true PUBLIC_BASE_URL=https://<your-app>.fly.dev`
 3. Redis (optional): Use Upstash or Fly Redis, set REDIS_URL.
 4. Deploy: Push to main.
+5. Optional: set `STRIPE_SIMULATION_PRICE_CENTS` (price in cents), `STRIPE_SIMULATION_CURRENCY`, `STRIPE_SUCCESS_URL`/`STRIPE_CANCEL_URL`, and `CHECKOUT_TOKEN_TTL_MINUTES` to tune pricing and session handling.
 
 ### A2A & 402 Protocol Compatibility (Future-Proofing)
 - Supports Google's Agent-to-Agent (A2A) interactions with HTTP 402 "Payment Required" for unpaid simulations.
-- In `/simulate`, if `STRIPE_ENABLED=true` and no `payment_token`, returns 402 with payment details (0.01 USD, methods: google_pay/stripe_card).
-- Agents send `payment_token` (Stripe/Google Pay) and `payment_method` in request body to pay and simulate in one call.
-- Verification via Stripe (PaymentIntent for tokens). Set `STRIPE_SECRET_KEY` for live; mocks in tests.
-- Example for agents: POST /simulate with token → 200 if paid, else 402. Usage tracked for billing reconciliation.
+- When `STRIPE_ENABLED=true`, `/simulate` returns 402 with a Stripe Checkout link, price (default 1.00 USD), and session id whenever no valid payment token is supplied.
+- Agents may also call `POST /pay` with an optional `fmu_id` to pre-create a checkout session and reuse the returned `session_id`/`checkout_url`.
+- After Stripe emits `checkout.session.completed`, call `GET /payments/checkout/{session_id}` with the same API key to exchange the session for a short-lived simulation token.
+- Submit that token via `/simulate` to consume the paid run; tokens expire automatically after use.
+- Webhook endpoint: `POST /webhooks/stripe` (set `STRIPE_WEBHOOK_SECRET` for signature verification).
 
-cURL example (with payment token):
-- `curl -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -d '{"fmu_id":"msl:BouncingBall","stop_time":1.0,"step":0.01,"kpis":["y_rms"],"payment_token":"tok_visa","payment_method":"stripe_card"}' http://localhost:8000/simulate`
-
-For Google Pay: Agents use Google Pay API to get token, send as `payment_token`. Extend for full A2A chaining (e.g., /pay endpoint if needed).
+Example agent flow:
+1. `POST /simulate` → receives HTTP 402 with `session_id` + `checkout_url`.
+2. User completes Stripe Checkout (or agent opens the link).
+3. `GET /payments/checkout/{session_id}` → returns `{"payment_token": ...}` once the webhook fires.
+4. `POST /simulate` with `{"payment_token": ...}` to execute the simulation.
 
 ## Tests
 - Phase 1: `pytest tests/`

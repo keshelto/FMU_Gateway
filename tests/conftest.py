@@ -48,6 +48,10 @@ class _StripeStubHandler(BaseHTTPRequestHandler):
                 self._json({"id": "pi_test", "object": "payment_intent", "status": "succeeded"})
         elif self.path == "/v1/charges":
             self._json({"id": "ch_test", "object": "charge", "status": "succeeded"})
+        elif self.path == "/v1/checkout/sessions":
+            self.server.session_counter += 1
+            session_id = f"cs_test_{self.server.session_counter}"
+            self._json({"id": session_id, "object": "checkout.session", "url": f"https://checkout.stripe.com/pay/{session_id}"})
         else:
             self._json({"error": {"message": "Not found"}}, status=404)
 
@@ -65,6 +69,7 @@ def _start_stripe_stub():
     port = _allocate_port()
     server = HTTPServer(("127.0.0.1", port), _StripeStubHandler)
     server.records = []
+    server.session_counter = 0
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     os.environ['STRIPE_API_BASE'] = f"http://127.0.0.1:{port}"

@@ -80,3 +80,20 @@ class Usage(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     fmu_id = Column(String(255))
     duration_ms = Column(Integer)  # simulation duration in ms
+
+
+class PaymentToken(Base):
+    __tablename__ = "payment_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    api_key_id = Column(Integer, ForeignKey("api_keys.id"), index=True, nullable=False)
+    session_id = Column(String(255), unique=True, nullable=False)
+    token = Column(String(255), unique=True, nullable=True, index=True)
+    status = Column(String(32), default="pending")
+    checkout_url = Column(String(500), nullable=True)
+    fmu_id = Column(String(255), nullable=True)
+    amount_cents = Column(Integer, default=100)
+    currency = Column(String(16), default="usd")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, default=datetime.utcnow)
+    consumed_at = Column(DateTime, nullable=True)
