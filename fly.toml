@@ -1,29 +1,47 @@
-# fly.toml app configuration file generated for fmu-gateway-long-pine-7571 on 2025-09-25T16:23:55+01:00
+# fly.toml app configuration file generated for fmu-gateway-long-pine-7571 on 2025-10-16T19:08:04+01:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'fmu-gateway-long-pine-7571'
-primary_region = 'lhr'
+app = "fmu-gateway-long-pine-7571"  # Use the auto-generated app name from Step 2
+primary_region = "iad"  # Replace with your selected region if different (e.g., iad, ord)
 
 [build]
+dockerfile = "Dockerfile"
 
+[[services]]
+internal_port = 8080
+protocol = "tcp"
+auto_stop_machines = false  # Disable auto-stop to keep app always-on
+auto_start_machines = false  # Disable auto-start (manual control if needed)
+min_machines_running = 1  # Ensure at least 1 machine always runs
+processes = ["app"]
+
+[[services.http_checks]]
+interval = "10s"
+timeout = "2s"
+grace_period = "5s"
+method = "GET"
+path = "/"
+protocol = "http"
+response_check = {status_code=200}
+
+[services.concurrency]
+type = "connections"
+hard_limit = 25
+soft_limit = 20
+
+# Environment variables can be set here if needed, but use fly secrets for sensitive ones like STRIPE keys
 [env]
+PORT = "8080"
   DATABASE_URL = ''
-  REDIS_URL = 'redis://localhost:6379'
-  STRIPE_SECRET_KEY = ''
-  STRIPE_ENABLED = 'true'
-  STRIPE_SIMULATION_PRICE_CENTS = '100'
-  STRIPE_SIMULATION_CURRENCY = 'usd'
-  PUBLIC_BASE_URL = 'https://fmu-gateway-long-pine-7571.fly.dev'
   FMU_GATEWAY_DB_PATH = '/data/fmu_gateway.sqlite3'
-
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
+  PUBLIC_BASE_URL = 'https://fmu-gateway-long-pine-7571.fly.dev'
+  REDIS_URL = 'redis://localhost:6379'
+  STRIPE_ENABLED = 'true'
+  STRIPE_SECRET_KEY = ''
+  STRIPE_SIMULATION_CURRENCY = 'usd'
+  STRIPE_SIMULATION_PRICE_CENTS = '100'
 
 [[vm]]
   memory = '1gb'
