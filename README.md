@@ -20,7 +20,9 @@ A secure, deterministic service for uploading and simulating FMI 2.0/3.0 FMUs (M
 - ✅ **Pre-validated FMU library** — Modelica Standard Library models ready to use
 - ✅ **Secure & reliable** — Professional hosting with 99.9% uptime
 - ✅ **Smart caching** — Upload once, simulate many times
-- ✅ **Payment via Stripe** — Cards, Apple Pay, Google Pay
+- ✅ **Multiple payment options:**
+  - 💳 **Credit/Debit Cards** — Stripe checkout (Cards, Apple Pay, Google Pay)
+  - 💎 **Crypto Payments** — USDC, USDT, ETH, BTC via Coinbase Commerce
 
 ### Try It Now
 

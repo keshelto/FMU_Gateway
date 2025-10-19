@@ -26,6 +26,8 @@ from fastapi import status
 import time
 import app.db as db_mod
 import stripe
+from coinbase_commerce.client import Client as CoinbaseClient
+from coinbase_commerce.error import SignatureVerificationError, WebhookInvalidPayload
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,6 +44,7 @@ except Exception as e:
     r = None
 
 STRIPE_ENABLED = os.getenv('STRIPE_ENABLED', 'true').lower() == 'true'
+COINBASE_ENABLED = os.getenv('COINBASE_ENABLED', 'false').lower() == 'true'
 REQUIRE_AUTH = os.getenv('REQUIRE_AUTH', 'true').lower() == 'true'
 
 SIMULATION_PRICE_CENTS = int(os.getenv('STRIPE_SIMULATION_PRICE_CENTS', '100'))
@@ -52,6 +55,13 @@ CANCEL_URL_TEMPLATE = os.getenv('STRIPE_CANCEL_URL')
 PENDING_SESSION_TTL_MINUTES = int(os.getenv('PENDING_SESSION_TTL_MINUTES', '60'))
 CHECKOUT_TOKEN_TTL_MINUTES = int(os.getenv('CHECKOUT_TOKEN_TTL_MINUTES', '30'))
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
+COINBASE_API_KEY = os.getenv('COINBASE_API_KEY')
+COINBASE_WEBHOOK_SECRET = os.getenv('COINBASE_WEBHOOK_SECRET')
+
+# Initialize Coinbase Commerce client
+coinbase_client = None
+if COINBASE_ENABLED and COINBASE_API_KEY:
+    coinbase_client = CoinbaseClient(api_key=COINBASE_API_KEY)
 
 security = HTTPBearer(auto_error=False)  # Don't auto-error to allow optional auth
 
@@ -174,18 +184,77 @@ def _create_checkout_session(
     return record
 
 
+def _create_coinbase_charge(
+    db,
+    api_key_obj: db_mod.ApiKey,
+    fmu_id: Optional[str] = None,
+) -> db_mod.PaymentToken:
+    """Create a Coinbase Commerce charge for crypto payments."""
+    if not coinbase_client:
+        raise HTTPException(500, "Coinbase Commerce not configured")
+    
+    amount_usd = SIMULATION_PRICE_CENTS / 100.0
+    
+    charge_data = {
+        "name": f"FMU Simulation ({fmu_id or 'custom'})",
+        "description": "1 simulation credit - pay with crypto",
+        "pricing_type": "fixed_price",
+        "local_price": {
+            "amount": f"{amount_usd:.2f}",
+            "currency": "USD"
+        },
+        "metadata": {
+            "api_key_id": str(api_key_obj.id),
+            "fmu_id": fmu_id or ""
+        },
+        "redirect_url": f"{PUBLIC_BASE_URL.rstrip('/')}/payments/crypto-success",
+        "cancel_url": f"{PUBLIC_BASE_URL.rstrip('/')}/payments/cancelled"
+    }
+    
+    try:
+        charge = coinbase_client.charge.create(**charge_data)
+    except Exception as exc:
+        raise HTTPException(502, f"Coinbase Commerce error: {str(exc)}")
+    
+    expires_at = datetime.utcnow() + timedelta(hours=1)  # Coinbase charges expire in 1 hour
+    
+    record = db_mod.PaymentToken(
+        api_key_id=api_key_obj.id,
+        session_id=charge['code'],  # Use Coinbase charge code as session_id
+        checkout_url=charge['hosted_url'],
+        status='pending',
+        fmu_id=fmu_id,
+        amount_cents=SIMULATION_PRICE_CENTS,
+        currency='usd',
+        expires_at=expires_at,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
 def _payment_amount() -> float:
     return SIMULATION_PRICE_CENTS / 100.0
 
 
 def _build_payment_response(token_record: db_mod.PaymentToken) -> schemas.PaymentResponse:
     amount = token_record.amount_cents / 100.0 if token_record.amount_cents else _payment_amount()
-    return schemas.PaymentResponse(
+    resp = schemas.PaymentResponse(
         amount=amount,
         currency=token_record.currency,
         checkout_url=token_record.checkout_url,
         session_id=token_record.session_id,
     )
+    
+    # If it's a Coinbase charge (session_id looks like a code), add crypto info
+    if token_record.session_id and len(token_record.session_id) == 8:
+        resp.payment_method = "crypto"
+        resp.code = token_record.session_id
+        resp.hosted_url = token_record.checkout_url
+        resp.next_step = "Complete crypto payment and call /payments/crypto/{code} to retrieve your simulation token"
+    
+    return resp
 
 
 def _claim_payment_token(db, api_key_id: int, token_value: Optional[str]) -> Optional[db_mod.PaymentToken]:
@@ -702,6 +771,68 @@ async def stripe_webhook(request: Request, db=Depends(get_db)):
     return {"received": True}
 
 
+@app.post("/webhooks/coinbase")
+async def coinbase_webhook(request: Request, db=Depends(get_db)):
+    """Handle Coinbase Commerce webhook events."""
+    if not COINBASE_ENABLED:
+        raise HTTPException(400, "Coinbase Commerce not enabled")
+    
+    payload = await request.body()
+    signature = request.headers.get("X-CC-Webhook-Signature")
+    
+    try:
+        # Verify webhook signature if secret is configured
+        if COINBASE_WEBHOOK_SECRET:
+            from coinbase_commerce.webhook import Webhook
+            event = Webhook.construct_event(payload.decode(), signature, COINBASE_WEBHOOK_SECRET)
+        else:
+            event = json.loads(payload.decode())
+    except (SignatureVerificationError, WebhookInvalidPayload):
+        raise HTTPException(400, "Invalid signature")
+    except ValueError:
+        raise HTTPException(400, "Invalid payload")
+    
+    event_type = event.get("type")
+    charge_data = event.get("data", {})
+    
+    if event_type == "charge:confirmed":
+        # Payment confirmed - issue token
+        charge_code = charge_data.get("code")
+        metadata = charge_data.get("metadata", {})
+        api_key_id = metadata.get("api_key_id")
+        
+        if charge_code:
+            record = (
+                db.query(db_mod.PaymentToken)
+                .filter(db_mod.PaymentToken.session_id == charge_code)
+                .first()
+            )
+            
+            if record and record.status == 'pending':
+                # Generate and assign token
+                token_value = secrets.token_urlsafe(32)
+                record.token = token_value
+                record.status = 'ready'
+                expires_at = datetime.utcnow() + timedelta(minutes=CHECKOUT_TOKEN_TTL_MINUTES)
+                record.expires_at = expires_at
+                db.commit()
+    
+    elif event_type in ["charge:failed", "charge:expired"]:
+        # Payment failed or expired
+        charge_code = charge_data.get("code")
+        if charge_code:
+            record = (
+                db.query(db_mod.PaymentToken)
+                .filter(db_mod.PaymentToken.session_id == charge_code)
+                .first()
+            )
+            if record:
+                record.status = 'expired'
+                db.commit()
+    
+    return {"received": True}
+
+
 @app.post("/keys")
 def create_key(db=Depends(get_db)):
     key = str(uuid.uuid4())
@@ -745,6 +876,25 @@ def create_payment_session(
     return _build_payment_response(record)
 
 
+@app.post("/pay/crypto", response_model=schemas.PaymentResponse)
+def create_crypto_payment(
+    request: schemas.PayRequest,
+    current_user: db_mod.ApiKey = Depends(verify_api_key),
+    db=Depends(get_db),
+):
+    """Create a Coinbase Commerce charge for crypto payments."""
+    if not COINBASE_ENABLED:
+        raise HTTPException(400, "Crypto payments are not enabled")
+
+    # Check for reusable pending session
+    reusable = _reuse_pending_session(db, current_user.id)
+    if reusable and (not request.fmu_id or reusable.fmu_id == request.fmu_id):
+        return _build_payment_response(reusable)
+
+    record = _create_coinbase_charge(db, current_user, request.fmu_id)
+    return _build_payment_response(record)
+
+
 @app.get("/payments/checkout/{session_id}", response_model=schemas.PaymentTokenStatus)
 def retrieve_payment_token(
     session_id: str,
@@ -773,6 +923,40 @@ def retrieve_payment_token(
 
     return schemas.PaymentTokenStatus(
         session_id=session_id,
+        payment_token=record.token,
+        expires_at=record.expires_at,
+    )
+
+
+@app.get("/payments/crypto/{charge_code}", response_model=schemas.PaymentTokenStatus)
+def retrieve_crypto_payment_token(
+    charge_code: str,
+    current_user: db_mod.ApiKey = Depends(verify_api_key),
+    db=Depends(get_db),
+):
+    """Retrieve payment token for a Coinbase Commerce charge."""
+    record = (
+        db.query(db_mod.PaymentToken)
+        .filter(db_mod.PaymentToken.session_id == charge_code)
+        .first()
+    )
+    if not record or record.api_key_id != current_user.id:
+        raise HTTPException(404, "Crypto payment not found")
+
+    if record.consumed_at is not None:
+        raise HTTPException(410, "Payment token already used")
+
+    now = datetime.utcnow()
+    if record.expires_at < now and record.status != 'consumed':
+        record.status = 'expired'
+        db.commit()
+        raise HTTPException(410, "Payment token expired")
+
+    if not record.token or record.status != 'ready':
+        raise HTTPException(404, "Payment not completed yet")
+
+    return schemas.PaymentTokenStatus(
+        session_id=charge_code,
         payment_token=record.token,
         expires_at=record.expires_at,
     )
@@ -897,7 +1081,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         return schemas.SimulationResult.model_validate(json.loads(cached))
 
     consumed_token: Optional[db_mod.PaymentToken] = None
-    if STRIPE_ENABLED:
+    if STRIPE_ENABLED or COINBASE_ENABLED:
         claimed_token = _claim_payment_token(db, current_user.id, req.payment_token)
         if claimed_token is None:
             error_code = None
@@ -912,8 +1096,17 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
 
             reusable = _reuse_pending_session(db, current_user.id)
             if not reusable:
-                _ensure_stripe_customer(current_user, db)
-                reusable = _create_checkout_session(db, current_user, req.fmu_id)
+                # Determine payment method - default to Stripe if both enabled, or use the requested method
+                payment_method = req.payment_method or "stripe"
+                
+                if payment_method == "crypto" and COINBASE_ENABLED:
+                    reusable = _create_coinbase_charge(db, current_user, req.fmu_id)
+                elif STRIPE_ENABLED:
+                    _ensure_stripe_customer(current_user, db)
+                    reusable = _create_checkout_session(db, current_user, req.fmu_id)
+                else:
+                    raise HTTPException(400, f"Payment method '{payment_method}' not available")
+            
             response_payload = _build_payment_response(reusable)
             response_payload.error = error_code or "complete_checkout"
             return JSONResponse(status_code=402, content=response_payload.model_dump())

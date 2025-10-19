@@ -86,8 +86,8 @@ class SimulateRequest(BaseModel):
     start_values: Dict[str, float] = Field(default_factory=dict)
     input_signals: List[InputSignal] = Field(default_factory=list)
     kpis: List[str] = Field(default_factory=list)
-    payment_token: Optional[str] = None  # Session token issued after Stripe checkout
-    payment_method: Optional[str] = None  # Deprecated: maintained for backwards compatibility
+    payment_token: Optional[str] = None  # Session token issued after payment
+    payment_method: Optional[str] = "stripe"  # "stripe" or "crypto"
     quote_only: Optional[bool] = None  # Allows agents to request a payment quote (HTTP 402)
     parameters: Optional[SimulationParameters] = None
     drive_cycle: Optional[List[DriveCyclePoint]] = None
@@ -180,12 +180,17 @@ class PaymentResponse(BaseModel):
     status: str = "payment_required"
     amount: float = 1.0
     currency: str = "usd"
-    methods: List[str] = Field(default_factory=lambda: ["stripe_checkout"])
+    methods: List[str] = Field(default_factory=lambda: ["stripe_checkout", "crypto"])
     description: str = "FMU Simulation Charge"
     next_step: str = "Complete checkout and call /payments/checkout/{session_id} to retrieve your simulation token"
     checkout_url: Optional[str] = None
     session_id: Optional[str] = None
     error: Optional[str] = None
+    # Crypto-specific fields
+    payment_method: Optional[str] = None
+    crypto_addresses: Optional[Dict[str, str]] = None
+    hosted_url: Optional[str] = None
+    code: Optional[str] = None
 
 
 class PayRequest(BaseModel):
