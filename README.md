@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![API Status](https://img.shields.io/badge/API-Live-brightgreen)](https://fmu-gateway-long-pine-7571.fly.dev/health)
 [![Pricing](https://img.shields.io/badge/Pricing-$1%2Fsim-blue)](https://fmu-gateway-long-pine-7571.fly.dev/docs)
+[![Accepts Crypto](https://img.shields.io/badge/Accepts-Crypto-orange?logo=bitcoin)](https://commerce.coinbase.com/)
 
 Run any FMI 2.0/3.0 FMU instantly via REST API — **$1 per simulation**.
 
@@ -20,9 +21,21 @@ A secure, deterministic service for uploading and simulating FMI 2.0/3.0 FMUs (M
 - ✅ **Pre-validated FMU library** — Modelica Standard Library models ready to use
 - ✅ **Secure & reliable** — Professional hosting with 99.9% uptime
 - ✅ **Smart caching** — Upload once, simulate many times
-- ✅ **Multiple payment options:**
-  - 💳 **Credit/Debit Cards** — Stripe checkout (Cards, Apple Pay, Google Pay)
-  - 💎 **Crypto Payments** — USDC, USDT, ETH, BTC via Coinbase Commerce
+
+### 💳 Pay Your Way
+
+Choose your preferred payment method:
+
+**Credit/Debit Cards** 💳
+- Stripe checkout with all major cards, Apple Pay, Google Pay
+- Instant confirmation
+
+**Cryptocurrency** 💎 *(Lower fees!)*
+- Pay with USDC, USDT, ETH, BTC, and more via Coinbase Commerce
+- ⚡ ~30 second confirmations for stablecoins
+- 🌍 No bank account required
+- 🔒 Privacy-friendly payments
+- Works with MetaMask, Coinbase Wallet, WalletConnect, and any Web3 wallet
 
 ### Try It Now
 
@@ -30,11 +43,19 @@ A secure, deterministic service for uploading and simulating FMI 2.0/3.0 FMUs (M
 # 1. Get API key
 curl -X POST https://fmu-gateway-long-pine-7571.fly.dev/keys
 
-# 2. Run a simulation (get payment link)
+# 2. Run a simulation (choose payment method)
+
+# Option A: Pay with credit card (default)
 curl -X POST https://fmu-gateway-long-pine-7571.fly.dev/simulate \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"fmu_id":"msl:BouncingBall","stop_time":5.0,"step":0.01}'
+
+# Option B: Pay with crypto (USDC, ETH, BTC, etc.)
+curl -X POST https://fmu-gateway-long-pine-7571.fly.dev/simulate \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"fmu_id":"msl:BouncingBall","stop_time":5.0,"step":0.01,"payment_method":"crypto"}'
 
 # 3. Complete payment and get results
 ```

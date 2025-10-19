@@ -1,0 +1,10 @@
+{
+  "type": "charge:confirmed",
+  "data": {
+    "code": "KG62HJVD",
+    "metadata": {
+      "api_key_id": "1"
+    }
+  }
+}
+
