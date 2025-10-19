@@ -19,13 +19,37 @@ class FMUGatewayClient:
         self.base_url = base_url.rstrip("/")
         self.auth = APIKeyAuth(api_key)
 
-    def execute_fmu(
+    def execute(
         self,
         fmu_path: str | Path,
         parameters: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Upload an FMU file and trigger execution on the backend."""
+        try:
+            return self._execute(fmu_path, parameters, metadata)
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 402:
+                raise RuntimeError(
+                    "Your credits are low. Visit billing portal at https://fmu-gateway.ai/billing"
+                ) from exc
+            raise
+
+    def execute_fmu(
+        self,
+        fmu_path: str | Path,
+        parameters: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Backward compatible alias for :meth:`execute`."""
+        return self.execute(fmu_path, parameters, metadata)
+
+    def _execute(
+        self,
+        fmu_path: str | Path,
+        parameters: Optional[Dict[str, Any]],
+        metadata: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         target = f"{self.base_url}/execute_fmu"
         payload = {
             "parameters": parameters or {},

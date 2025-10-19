@@ -4,3 +4,4 @@ python-multipart==0.0.9
 stripe==8.0.0
 PyJWT==2.8.0
 pydantic==1.10.13
+SQLAlchemy==1.4.52
