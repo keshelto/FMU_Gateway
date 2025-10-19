@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_session
-from ..models import UsageLog, User
+from ..models import FMUPackage, License, Listing, Purchase, SKUType, UsageLog, User, ValidationJob
 from ..models.user import LoginRequest, UserCreate
 from ..services.auth_service import AuthService
 from ..services.billing_service import BillingService
 from ..services.frontend_service import frontend_service, get_current_user
+from ..services.marketplace_service import marketplace_service
+from ..services.object_storage import generate_signed_url
 from ..services.stripe_service import StripeService
 from . import auth as auth_routes
 
@@ -231,6 +233,110 @@ async def create_checkout(
     billing_service.log_usage(session, user, f"checkout_{plan}", 0)
 
     return RedirectResponse(url=checkout["url"], status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/creator/console")
+async def creator_console(
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Any:
+    creator = user.creator_profile
+    if not creator:
+        context = {"title": "Creator Console", "user": user, "error": "Apply as a creator to unlock publishing tools."}
+        return frontend_service.render(request, "creator_console.html", context)
+
+    packages = (
+        session.query(FMUPackage)
+        .filter(FMUPackage.creator_id == creator.id)
+        .order_by(FMUPackage.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    jobs = (
+        session.query(ValidationJob)
+        .join(FMUPackage)
+        .filter(FMUPackage.creator_id == creator.id)
+        .order_by(ValidationJob.started_at.desc())
+        .limit(10)
+        .all()
+    )
+    job_payload = [
+        {
+            "version": job.version,
+            "status": job.status,
+            "report_key": job.report_key,
+            "report_url": generate_signed_url(job.report_key) if job.report_key else None,
+        }
+        for job in jobs
+    ]
+    context = {
+        "title": "Creator Console",
+        "user": user,
+        "packages": packages,
+        "validation_jobs": job_payload,
+    }
+    return frontend_service.render(request, "creator_console.html", context)
+
+
+@router.get("/marketplace")
+async def marketplace_page(request: Request, session: Session = Depends(get_session)) -> Any:
+    query = request.query_params.get("q")
+    certified_only = request.query_params.get("certified_only") == "1"
+    packages = marketplace_service.search_packages(
+        session,
+        query=query,
+        tags=None,
+        certified_only=certified_only,
+        sort=request.query_params.get("sort"),
+    )
+    context = {
+        "title": "Marketplace",
+        "query": query or "",
+        "certified_only": certified_only,
+        "packages": packages,
+    }
+    return frontend_service.render(request, "marketplace.html", context)
+
+
+@router.get("/account/licenses")
+async def buyer_account(
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Any:
+    licenses = (
+        session.query(License)
+        .filter(License.buyer_user_id == user.id)
+        .join(Purchase)
+        .join(Listing)
+        .all()
+    )
+    data = []
+    for license_obj in licenses:
+        entitlement = license_obj.entitlements
+        download_url = None
+        if license_obj.purchase.listing.sku_type == SKUType.DOWNLOAD and not license_obj.is_revoked:
+            download_url = generate_signed_url(license_obj.version.file_key)
+        data.append(
+            {
+                "id": license_obj.id,
+                "package_id": license_obj.package_id,
+                "version_id": license_obj.version_id,
+                "scope": license_obj.scope.value,
+                "seats": license_obj.seats,
+                "is_revoked": license_obj.is_revoked,
+                "runs_remaining": entitlement.runs_remaining if entitlement else None,
+                "download_url": download_url,
+            }
+        )
+
+    context = {
+        "title": "Buyer Account",
+        "user": user,
+        "licenses": data,
+    }
+    return frontend_service.render(request, "buyer_account.html", context)
 
 
 @router.get("/usage")

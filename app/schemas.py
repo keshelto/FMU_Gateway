@@ -2,7 +2,16 @@ import math
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
+    from pydantic import BaseModel, Field, model_validator
+except ImportError:  # pragma: no cover
+    from pydantic import BaseModel, Field, root_validator
+
+    def model_validator(*, mode=None):  # type: ignore
+        def decorator(func):
+            return root_validator(pre=False, allow_reuse=True)(func)
+
+        return decorator
 
 
 class InputSignal(BaseModel):
