@@ -180,7 +180,7 @@ class PaymentResponse(BaseModel):
     status: str = "payment_required"
     amount: float = 1.0
     currency: str = "usd"
-    methods: List[str] = Field(default_factory=lambda: ["stripe_checkout", "crypto"])
+    methods: List[str] = Field(default_factory=lambda: ["stripe_checkout"])
     description: str = "FMU Simulation Charge"
     next_step: str = "Complete checkout and call /payments/checkout/{session_id} to retrieve your simulation token"
     checkout_url: Optional[str] = None

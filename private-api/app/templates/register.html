@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="auth-card">
+  <h1>Create Engineer Account</h1>
+  {% if error %}
+  <p class="alert">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/register">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label for="name">Name</label>
+    <input id="name" name="name" type="text" value="{{ name or '' }}" placeholder="Optional" />
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" value="{{ email or '' }}" placeholder="engineer@company.com" />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" placeholder="At least 8 characters" />
+    <button type="submit" class="button full">Register</button>
+  </form>
+  <p class="auth-footer">Already registered? <a href="/login">Sign in</a>.</p>
+</section>
+{% endblock %}

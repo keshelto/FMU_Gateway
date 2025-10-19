@@ -1,4 +1,4 @@
 """Model exports for the private API."""
-from .entities import Base, UsageLog, User
+from .entities import APIKey, Base, UsageLog, User
 
-__all__ = ["Base", "UsageLog", "User"]
+__all__ = ["Base", "UsageLog", "User", "APIKey"]

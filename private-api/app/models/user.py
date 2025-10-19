@@ -9,12 +9,15 @@ class UserCreate(BaseModel):
 
     email: str
     name: str | None = None
+    password: str | None = None
 
 
 class LoginRequest(BaseModel):
     """Request schema for login using an API key."""
 
-    api_key: str
+    email: str | None = None
+    password: str | None = None
+    api_key: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -22,7 +25,7 @@ class UserResponse(BaseModel):
 
     user_id: str = Field(..., alias="id", serialization_alias="user_id")
     email: str
-    api_key: str
+    api_key: str | None = None
     credits: int
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
