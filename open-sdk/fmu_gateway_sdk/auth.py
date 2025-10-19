@@ -15,5 +15,6 @@ class APIKeyAuth:
         """Return headers required by the backend for API key authentication."""
         return {
             "Authorization": f"Bearer {self.api_key}",
+            "X-API-Key": self.api_key,
             "User-Agent": "fmu-gateway-sdk/0.1.0",
         }
