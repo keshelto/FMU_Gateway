@@ -1,0 +1,39 @@
+FMU Gateway - Final Test Transaction
+
+Your API Key: b4def8bc-c217-41cc-a3f9-11fb9bfdf655
+
+Step 1: Request Simulation (get checkout URL)
+===============================================
+curl.exe -X POST "https://fmu-gateway-long-pine-7571.fly.dev/simulate" -H "Authorization: Bearer b4def8bc-c217-41cc-a3f9-11fb9bfdf655" -H "Content-Type: application/json" -d "{\"fmu_id\":\"msl:BouncingBall\",\"stop_time\":1.0,\"step\":0.01}"
+
+Expected: HTTP 402 with checkout_url and session_id
+Save the session_id for Step 3!
+
+Step 2: Complete Stripe Checkout
+=================================
+- Copy the checkout_url from Step 1 response
+- Open it in your browser
+- Use test card: 4242 4242 4242 4242
+- Expiry: 12/25
+- CVC: 123
+- Complete payment
+
+Step 3: Get Payment Token
+==========================
+curl.exe "https://fmu-gateway-long-pine-7571.fly.dev/payments/checkout/SESSION_ID_FROM_STEP_1" -H "Authorization: Bearer b4def8bc-c217-41cc-a3f9-11fb9bfdf655"
+
+Replace SESSION_ID_FROM_STEP_1 with the actual session ID
+Wait 5-10 seconds after checkout before running this
+
+Expected: {"payment_token":"...","session_id":"...","expires_at":"..."}
+
+Step 4: Execute Paid Simulation
+================================
+curl.exe -X POST "https://fmu-gateway-long-pine-7571.fly.dev/simulate" -H "Authorization: Bearer b4def8bc-c217-41cc-a3f9-11fb9bfdf655" -H "Content-Type: application/json" -d "{\"fmu_id\":\"msl:BouncingBall\",\"stop_time\":1.0,\"step\":0.01,\"payment_token\":\"TOKEN_FROM_STEP_3\"}"
+
+Replace TOKEN_FROM_STEP_3 with the actual payment token
+
+Expected: HTTP 200 with simulation results!
+
+SUCCESS = Phase 1 COMPLETE, ready for launch!
+

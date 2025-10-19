@@ -1,0 +1,6 @@
+{
+  "fmu_id": "msl:BouncingBall",
+  "stop_time": 1.0,
+  "step": 0.01
+}
+

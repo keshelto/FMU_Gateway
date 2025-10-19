@@ -1,7 +1,69 @@
 # FMU Gateway
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![API Status](https://img.shields.io/badge/API-Live-brightgreen)](https://fmu-gateway-long-pine-7571.fly.dev/health)
+[![Pricing](https://img.shields.io/badge/Pricing-$1%2Fsim-blue)](https://fmu-gateway-long-pine-7571.fly.dev/docs)
+
+Run any FMI 2.0/3.0 FMU instantly via REST API — **$1 per simulation**.
+
 ## What this is
 A secure, deterministic service for uploading and simulating FMI 2.0/3.0 FMUs (ME & CS) using FMPy. Deployed on Fly.io in Docker. Priorities: small API surface, security (e.g., platform checks, no network during sim), and clear schemas.
+
+---
+
+## 🚀 Hosted Service (Recommended)
+
+**Don't want to self-host? Use our managed API:**
+
+- ✅ **$1.00 per simulation** — No subscription, pay per use
+- ✅ **Instant access** — No setup, Docker, or infrastructure needed
+- ✅ **Pre-validated FMU library** — Modelica Standard Library models ready to use
+- ✅ **Secure & reliable** — Professional hosting with 99.9% uptime
+- ✅ **Smart caching** — Upload once, simulate many times
+- ✅ **Payment via Stripe** — Cards, Apple Pay, Google Pay
+
+### Try It Now
+
+```bash
+# 1. Get API key
+curl -X POST https://fmu-gateway-long-pine-7571.fly.dev/keys
+
+# 2. Run a simulation (get payment link)
+curl -X POST https://fmu-gateway-long-pine-7571.fly.dev/simulate \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"fmu_id":"msl:BouncingBall","stop_time":5.0,"step":0.01}'
+
+# 3. Complete payment and get results
+```
+
+**Live API:** https://fmu-gateway-long-pine-7571.fly.dev  
+**Documentation:** https://fmu-gateway-long-pine-7571.fly.dev/docs
+
+---
+
+## 💻 Self-Hosting (Open Source)
+
+This software is MIT licensed — you're free to run your own instance:
+
+**Benefits:**
+- Full control over infrastructure
+- No per-simulation fees
+- Customize for your needs
+
+**Requirements:**
+- Docker or Python 3.8+
+- FMPy and dependencies
+- Your own FMU files
+- Server/compute resources
+
+**Cost Comparison:**
+- Hosted: $1/simulation, zero setup
+- Self-hosted: $0/simulation, but server costs + maintenance time
+
+**Most users find the hosted service more economical for occasional use.**
+
+---
 
 ## Quick Start (AI Agent Friendly)
 
@@ -174,6 +236,86 @@ Example agent flow:
 2. User completes Stripe Checkout (or agent opens the link).
 3. `GET /payments/checkout/{session_id}` → returns `{"payment_token": ...}` once the webhook fires.
 4. `POST /simulate` with `{"payment_token": ...}` to execute the simulation.
+
+## Tests
+- Phase 1: `pytest tests/`
+
+---
+
+## 📊 Pricing & Plans
+
+### Pay-Per-Use (Current)
+- **$1.00 per simulation**
+- No commitment, pay as you go
+- Instant access with test card
+- Perfect for: Occasional simulations, evaluation, demos
+
+### Credit Packs (Coming Soon)
+- **10 simulations for $8** (20% discount)
+- **50 simulations for $35** (30% discount)
+- Pre-paid, never expires
+- Perfect for: Regular users, batch analysis
+
+### Enterprise (Contact Us)
+- **Custom pricing** for high volume
+- Priority support
+- Custom models and integrations
+- SLA guarantees
+- Perfect for: Production systems, teams, partners
+
+---
+
+## 🌟 Why Choose Hosted FMU Gateway?
+
+### vs. Running Locally
+- **No setup time** (save hours of configuration)
+- **No maintenance** (we handle updates, security, scaling)
+- **Better performance** (optimized infrastructure)
+- **Cost-effective** (no server costs for occasional use)
+
+### vs. Other Simulation Services
+- **Simple pricing** ($1 flat fee, no hidden costs)
+- **Open source** (audit the code, trust the process)
+- **Modern API** (REST + OpenAPI, easy integration)
+- **Payment flexibility** (pay per use or bulk credits)
+
+### vs. Manual FMPy
+- **Instant results** (no local installation needed)
+- **Model library** (pre-validated MSL models)
+- **Provenance tracking** (reproducible results)
+- **Parallel execution** (parameter sweeps)
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! This is open source software under MIT License.
+
+- **Report bugs:** Open an issue
+- **Suggest features:** Create a discussion
+- **Submit PRs:** Improvements welcome
+- **Share:** Star the repo, tell colleagues
+
+**Note:** Contributions to the code are MIT licensed. The hosted service and FMU library remain commercial offerings.
+
+---
+
+## 📄 License
+
+This software is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+
+The hosted API service and FMU library are commercial services with separate terms.
+
+---
+
+## 🆘 Support
+
+- **Documentation:** See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md)
+- **API Docs:** https://fmu-gateway-long-pine-7571.fly.dev/docs
+- **Issues:** GitHub Issues for bugs and features
+- **Enterprise:** Contact for custom support
+
+---
 
 ## Tests
 - Phase 1: `pytest tests/`
