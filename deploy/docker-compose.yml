@@ -1,0 +1,14 @@
+version: '3.9'
+services:
+  private-api:
+    build: ../private-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../private-api/.env.example
+  sdk:
+    build: ../open-sdk
+    environment:
+      FMU_GATEWAY_API_KEY: demo-key
+    depends_on:
+      - private-api

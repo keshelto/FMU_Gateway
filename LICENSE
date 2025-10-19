@@ -1,39 +1,9 @@
-MIT License
+FMU Gateway Source-Available Non-Commercial License
 
 Copyright (c) 2025 FMU Gateway
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Permission is granted to view, use, and modify this codebase for non-commercial purposes, including evaluation, academic research, and internal prototyping. Commercial deployment, resale, or offering of services built upon this code requires a commercial agreement with FMU Gateway.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Redistribution of the private-api/ directory or any derivative works based on it is prohibited. Redistributions of the open-sdk/ directory must preserve this license notice.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
----
-
-## Commercial Use
-
-This license covers the FMU Gateway software code. The following are separate
-commercial services:
-
-- **Hosted API Service**: Running simulations via https://fmu-gateway-long-pine-7571.fly.dev
-- **FMU Library**: Pre-validated models available through the hosted service
-- **Premium Features**: Advanced models, priority support, and enterprise integrations
-
-Self-hosting this software for personal or commercial use is permitted under
-the MIT License. However, the hosted API service and FMU library are commercial
-offerings subject to separate terms and pricing.
-
-For hosted service terms, see: https://fmu-gateway-long-pine-7571.fly.dev/docs
-
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
