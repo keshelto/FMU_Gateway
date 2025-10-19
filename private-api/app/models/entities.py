@@ -26,6 +26,27 @@ class User(Base):
 
     usage_logs = relationship("UsageLog", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    creator_profile = relationship(
+        "Creator",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    purchases = relationship(
+        "Purchase",
+        back_populates="buyer",
+        cascade="all, delete-orphan",
+    )
+    ratings = relationship(
+        "Rating",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    licenses = relationship(
+        "License",
+        back_populates="buyer",
+        cascade="all, delete-orphan",
+    )
 
 
 class APIKey(Base):

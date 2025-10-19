@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block title %}Certified FMU Registry{% endblock %}
+{% block content %}
+<h1 class="page-title">Certified FMU Registry</h1>
+<form method="get" class="search-bar">
+  <input type="text" name="q" value="{{ query }}" placeholder="Search FMUs" />
+  <label><input type="checkbox" name="certified_only" value="1" {% if certified_only %}checked{% endif %}/> Certified only</label>
+  <button class="btn btn-primary" type="submit">Search</button>
+</form>
+<div class="grid">
+  {% for package in packages %}
+  <article class="card">
+    <h2>{{ package.name }}</h2>
+    <p>{{ package.short_desc }}</p>
+    <p>
+      {% if package.is_certified %}<span class="badge bg-success">Certified</span>{% endif %}
+      {% if package.rating_count %}<span class="badge">⭐ {{ package.rating_avg|round(1) }} ({{ package.rating_count }})</span>{% endif %}
+    </p>
+    <a class="btn" href="/registry/packages/{{ package.id }}">View details</a>
+  </article>
+  {% else %}
+  <p>No packages match your query yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

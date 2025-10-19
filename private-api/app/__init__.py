@@ -8,7 +8,18 @@ from fastapi.staticfiles import StaticFiles
 
 from .database import engine
 from .models import Base
-from .routes import api_keys, auth, billing, dashboard, execute_fmu, registry, usage
+from .routes import (
+    admin_marketplace,
+    api_keys,
+    auth,
+    billing,
+    creator,
+    dashboard,
+    execute_fmu,
+    marketplace,
+    registry,
+    usage,
+)
 
 
 def create_app() -> FastAPI:
@@ -27,4 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(registry.router, prefix="/registry")
     app.include_router(usage.router)
     app.include_router(api_keys.router)
+    app.include_router(creator.router)
+    app.include_router(marketplace.router)
+    app.include_router(admin_marketplace.router)
     return app

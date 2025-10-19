@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+{% block title %}Buyer Account{% endblock %}
+{% block content %}
+<h1 class="page-title">Buyer Account</h1>
+<section class="card">
+  <h2>Licenses</h2>
+  <table class="table">
+    <thead>
+      <tr><th>Package</th><th>Scope</th><th>Seats</th><th>Status</th><th>Runs</th><th>Download</th></tr>
+    </thead>
+    <tbody>
+      {% for license in licenses %}
+      <tr>
+        <td>{{ license.package_id }}@{{ license.version_id }}</td>
+        <td>{{ license.scope }}</td>
+        <td>{{ license.seats }}</td>
+        <td>{% if license.is_revoked %}<span class="badge bg-danger">Revoked</span>{% else %}<span class="badge bg-success">Active</span>{% endif %}</td>
+        <td>{% if license.runs_remaining is not none %}{{ license.runs_remaining }}{% else %}Unlimited{% endif %}</td>
+        <td>{% if license.download_url %}<a href="{{ license.download_url }}" class="btn btn-link">Download</a>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No licenses issued yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="card">
+  <h2>Invoices</h2>
+  <p>Stripe receipts are emailed automatically after each purchase.</p>
+</section>
+{% endblock %}

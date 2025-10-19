@@ -11,11 +11,12 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_session
-from ..models import User
+from ..models import SKUType, User
 from ..models.fmu import FMUExecutionRequest, FMUExecutionResult
 from ..services.auth_service import AuthService
 from ..services.billing_service import BillingService
 from ..services.fmu_runner import FMURunner
+from ..services.licensing_service import licensing_service
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,9 @@ async def execute_fmu(
     payload: str = Form("{}"),
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
+    license_key: str | None = Form(default=None),
+    package_id: int | None = Form(default=None),
+    version_id: int | None = Form(default=None),
     session: Session = Depends(get_session),
 ) -> FMUExecutionResult:
     """Validate credentials, run the FMU, and deduct credits."""
@@ -79,7 +83,24 @@ async def execute_fmu(
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload JSON") from exc
 
-    if user.credits <= 0:
+    license_obj = None
+    if license_key or package_id or version_id:
+        if not all([license_key, package_id, version_id]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="License enforcement requires license_key, package_id, and version_id",
+            )
+        try:
+            license_obj = licensing_service.enforce_execution(
+                session,
+                license_key=license_key or "",
+                package_id=int(package_id),
+                version_id=int(version_id),
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    if user.credits <= 0 and not license_obj:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=f"Your credits are low. Visit billing portal at {settings.public_billing_portal}",
@@ -91,15 +112,25 @@ async def execute_fmu(
     elapsed = time.monotonic() - start_time
 
     credits_consumed = max(1, int(request_model.metadata.get("credit_cost", 1)))
-    try:
-        billing_service.deduct_credits(session, user, credits_consumed)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"Your credits are low. Visit billing portal at {settings.public_billing_portal}",
-        ) from None
+    should_deduct = True
+    if license_obj and license_obj.purchase.listing.sku_type == SKUType.DOWNLOAD:
+        should_deduct = False
 
-    billing_service.log_usage(session, user, request_model.metadata.get("fmu_name", fmu.filename or "unknown"), credits_consumed)
+    if should_deduct:
+        try:
+            billing_service.deduct_credits(session, user, credits_consumed)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Your credits are low. Visit billing portal at {settings.public_billing_portal}",
+            ) from None
+
+    billing_service.log_usage(
+        session,
+        user,
+        request_model.metadata.get("fmu_name", fmu.filename or "unknown"),
+        credits_consumed,
+    )
 
     logger.info(
         "FMU executed",

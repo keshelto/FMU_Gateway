@@ -1,4 +1,43 @@
 """Model exports for the private API."""
 from .entities import APIKey, Base, UsageLog, User
+from .marketplace import (
+    AuditLog,
+    Creator,
+    DMCATakedown,
+    ExecutionEntitlement,
+    FMUPackage,
+    FMUVersion,
+    License,
+    LicenseScope,
+    Listing,
+    Purchase,
+    PurchaseStatus,
+    Rating,
+    SKUType,
+    ValidationJob,
+    ValidationStatus,
+    WebhookDelivery,
+)
 
-__all__ = ["Base", "UsageLog", "User", "APIKey"]
+__all__ = [
+    "Base",
+    "UsageLog",
+    "User",
+    "APIKey",
+    "Creator",
+    "FMUPackage",
+    "FMUVersion",
+    "Listing",
+    "Purchase",
+    "License",
+    "ExecutionEntitlement",
+    "Rating",
+    "ValidationJob",
+    "WebhookDelivery",
+    "DMCATakedown",
+    "AuditLog",
+    "ValidationStatus",
+    "PurchaseStatus",
+    "SKUType",
+    "LicenseScope",
+]

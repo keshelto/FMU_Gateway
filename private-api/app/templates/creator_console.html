@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}Creator Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Creator Console</h1>
+<p class="text-muted">Submit FMUs, monitor validation, and configure pricing from one place.</p>
+<section class="card">
+  <h2>Packages</h2>
+  <p>Recently updated packages appear below. Validation badges refresh automatically.</p>
+  <ul>
+    {% for package in packages %}
+    <li>
+      <strong>{{ package.name }}</strong>
+      {% if package.is_certified %}<span class="badge bg-success">Certified</span>{% endif %}
+      <div class="text-muted">{{ package.short_desc }}</div>
+    </li>
+    {% else %}
+    <li>No packages yet. Use the API to upload your first FMU.</li>
+    {% endfor %}
+  </ul>
+</section>
+<section class="card">
+  <h2>Validation Jobs</h2>
+  <ul>
+    {% for job in validation_jobs %}
+    <li>
+      Version {{ job.version.semver }} – {{ job.status }}
+      {% if job.report_key %}<a href="{{ job.report_url }}" target="_blank">View report</a>{% endif %}
+    </li>
+    {% else %}
+    <li>No validation jobs queued.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}
