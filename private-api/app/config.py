@@ -18,6 +18,10 @@ class Settings:
             "PUBLIC_BILLING_PORTAL", "https://fmu-gateway.ai/billing"
         )
         self.free_tier_credits = int(os.getenv("FREE_TIER_CREDITS", "25"))
+        self.jwt_cookie_name = os.getenv("JWT_COOKIE_NAME", "fmu_session")
+        self.jwt_cookie_secure = os.getenv("JWT_COOKIE_SECURE", "false").lower() == "true"
+        self.csrf_cookie_name = os.getenv("CSRF_COOKIE_NAME", "fmu_csrf")
+        self.rate_limit_per_minute = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
 
         self.pricing: Dict[str, Dict[str, int | str]] = {
             "pro": {

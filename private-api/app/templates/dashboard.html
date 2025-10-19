@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel hero">
+  <h1>Welcome, {{ user.email }}</h1>
+  <p class="subtitle">Current plan: <strong>{{ plan }}</strong></p>
+  <div class="metrics">
+    <div class="metric">
+      <span class="label">Credits remaining</span>
+      <span class="value">{{ user.credits }}</span>
+    </div>
+    <div class="metric">
+      <span class="label">Primary API key</span>
+      <span class="value monospace">{{ user.api_keys[0].key if user.api_keys else user.api_key }}</span>
+    </div>
+  </div>
+  <div class="actions">
+    <a class="button" href="/billing">Top Up Credits</a>
+    <a class="button secondary" href="/usage">View Usage</a>
+    <a class="button secondary" href="/api-keys">Manage API Keys</a>
+  </div>
+</section>
+<section class="panel chart-panel">
+  <h2>Recent FMU Runs</h2>
+  <canvas id="usageChart" height="180"></canvas>
+</section>
+<section class="panel resources">
+  <h2>Resources</h2>
+  <ul>
+    <li><a href="{{ docs_url }}" target="_blank" rel="noopener">SDK Documentation</a></li>
+    <li><a href="/docs/sdk_usage.md" target="_blank" rel="noopener">Local SDK Usage Guide</a></li>
+  </ul>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const chartData = {{ chart | tojson }};
+  const ctx = document.getElementById('usageChart');
+  if (ctx && chartData.labels.length) {
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: chartData.labels,
+        datasets: [
+          {
+            label: 'Credits Consumed',
+            data: chartData.usage,
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.2)',
+            tension: 0.3,
+            fill: true,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: { display: false },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#cbd5f5' },
+            grid: { color: 'rgba(148, 163, 184, 0.2)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#cbd5f5' },
+            grid: { color: 'rgba(148, 163, 184, 0.2)' },
+          },
+        },
+      },
+    });
+  }
+</script>
+{% endblock %}

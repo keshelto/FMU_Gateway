@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel hero">
+  <h1>Usage Logs</h1>
+  <p>Download your history for analysis or auditing.</p>
+  <a class="button" href="/usage/export">Export CSV</a>
+</section>
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>FMU Name</th>
+          <th>Credits Used</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if logs %}
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>{{ log.fmu_name }}</td>
+          <td>{{ log.credits_used }}</td>
+          <td>{{ 'Success' }}</td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+          <td colspan="4" class="empty">No usage yet. Run an FMU to populate this table.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -253,7 +253,9 @@ def _build_payment_response(token_record: db_mod.PaymentToken) -> schemas.Paymen
         resp.code = token_record.session_id
         resp.hosted_url = token_record.checkout_url
         resp.next_step = "Complete crypto payment and call /payments/crypto/{code} to retrieve your simulation token"
-    
+        if "crypto" not in resp.methods:
+            resp.methods.append("crypto")
+
     return resp
 
 

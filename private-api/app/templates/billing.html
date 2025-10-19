@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel hero">
+  <h1>Billing & Plans</h1>
+  <p>Your current plan: <strong>{{ plan }}</strong></p>
+  <p>Credits remaining: <strong>{{ user.credits }}</strong></p>
+</section>
+<section class="panel">
+  <h2>Upgrade Options</h2>
+  <div class="plan-grid">
+    {% for slug, plan_details in pricing.items() %}
+    <form method="post" action="/billing/checkout" class="plan-card">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="plan" value="{{ slug }}" />
+      <h3>{{ plan_details.description }}</h3>
+      <p class="plan-credits">{{ plan_details.credits }} credits</p>
+      <p class="plan-price">${{ '%.2f' | format(plan_details.amount_cents / 100) }}</p>
+      <button type="submit" class="button">Upgrade via Stripe</button>
+    </form>
+    {% endfor %}
+  </div>
+  <p class="note">Checkout securely completes through Stripe. Add webhooks in <code>services/stripe_service.py</code>.</p>
+</section>
+<section class="panel">
+  <h2>Billing Portal</h2>
+  <p>Need invoices or payment history? Visit the customer portal.</p>
+  <a class="button secondary" href="{{ public_portal }}" target="_blank" rel="noopener">Open Portal</a>
+</section>
+{% endblock %}

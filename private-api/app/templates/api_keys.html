@@ -1,0 +1,59 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel hero">
+  <h1>API Keys</h1>
+  <p>Rotate credentials regularly and disable unused keys.</p>
+</section>
+<section class="panel">
+  <h2>Active Keys</h2>
+  <div class="table-wrapper">
+    <table id="api-keys-table" data-csrf="{{ csrf_token }}">
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Key</th>
+          <th>Runs</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if keys %}
+        {% for key in keys %}
+        <tr data-key-id="{{ key.id }}" class="{% if not key.is_active %}inactive{% endif %}">
+          <td>{{ key.label or 'Key #' ~ key.id }}</td>
+          <td class="monospace">{{ key.key }}</td>
+          <td>{{ key.usage_logs | length }}</td>
+          <td>{{ 'Active' if key.is_active else 'Revoked' }}</td>
+          <td>
+            {% if key.is_active %}
+            <button class="button danger revoke">Revoke</button>
+            {% else %}
+            <span class="tag">Revoked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+          <td colspan="5" class="empty">No API keys yet. Generate one below.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <h2>Generate New Key</h2>
+  <form id="new-key-form" class="form-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label for="label">Label</label>
+    <input id="label" name="label" type="text" placeholder="e.g. CI pipeline" />
+    <button type="submit" class="button">Generate</button>
+  </form>
+  <p class="note">Keys appear once on creation. Store them securely.</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_prefix }}/js/api_keys.js" defer></script>
+{% endblock %}
