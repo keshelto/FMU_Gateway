@@ -1,0 +1,14 @@
+{
+  "cluster": "fmu-gateway-cluster",
+  "serviceName": "fmu-gateway-api",
+  "taskDefinition": "fmu-gateway-api:1",
+  "desiredCount": 2,
+  "launchType": "FARGATE",
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": ["subnet-123", "subnet-456"],
+      "securityGroups": ["sg-123"],
+      "assignPublicIp": "ENABLED"
+    }
+  }
+}

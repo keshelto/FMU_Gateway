@@ -1,0 +1,59 @@
+openapi: 3.0.3
+info:
+  title: FMU Gateway API
+  version: 0.1.0
+paths:
+  /execute_fmu:
+    post:
+      summary: Execute an FMU model
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                fmu:
+                  type: string
+                  format: binary
+                payload:
+                  type: string
+                  description: JSON string containing parameters and metadata
+      responses:
+        '200':
+          description: FMU execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FMUExecutionResult'
+  /usage:
+    get:
+      summary: Retrieve user credit balances
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Credit balance response
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+  schemas:
+    FMUExecutionResult:
+      type: object
+      properties:
+        status:
+          type: string
+        output_url:
+          type: string
+        execution_time:
+          type: number
+        credits_consumed:
+          type: integer

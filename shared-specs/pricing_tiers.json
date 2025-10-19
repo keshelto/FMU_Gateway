@@ -1,0 +1,5 @@
+{
+  "free": { "credits": 25, "rate_per_run": 0 },
+  "pro": { "credits": 1000, "rate_per_run": 0.10 },
+  "enterprise": { "credits": 10000, "rate_per_run": 0.05 }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "private-api/app/main.py", "use": "@vercel/python" }
+  ],
+  "env": {
+    "STRIPE_KEY": "@stripe_key",
+    "JWT_SECRET": "@jwt_secret",
+    "S3_BUCKET_URL": "@s3_bucket_url"
+  }
+}
