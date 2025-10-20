@@ -62,8 +62,18 @@ class GeometryParameters(BaseModel):
 
     @model_validator(mode="after")
     def _default_contact_area(cls, values: "GeometryParameters"):
-        if values.contact_area is None:
-            values.contact_area = math.pi * values.contact_radius ** 2
+        contact_area = getattr(values, "contact_area", None)
+        contact_radius = getattr(values, "contact_radius", None)
+        if isinstance(values, dict):
+            contact_area = values.get("contact_area")
+            contact_radius = values.get("contact_radius")
+
+        if contact_area is None and contact_radius is not None:
+            computed = math.pi * contact_radius ** 2
+            if isinstance(values, dict):
+                values["contact_area"] = computed
+            else:
+                values.contact_area = computed
         return values
 
 
@@ -103,8 +113,12 @@ class SimulateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_drive_cycle(cls, values: "SimulateRequest"):
-        if values.drive_cycle:
-            times = [point.time for point in values.drive_cycle]
+        drive_cycle = getattr(values, "drive_cycle", None)
+        if drive_cycle is None and isinstance(values, dict):
+            drive_cycle = values.get("drive_cycle")
+
+        if drive_cycle:
+            times = [point.time for point in drive_cycle]
             if any(b <= a for a, b in zip(times, times[1:])):
                 raise ValueError("drive_cycle times must be strictly increasing")
         return values

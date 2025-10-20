@@ -27,7 +27,11 @@ class UsageLogResponse(BaseModel):
     credits_used: int
     api_key_id: int | None
 
-    model_config = ConfigDict(from_attributes=True)
+    if hasattr(BaseModel, "model_config"):
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
 
 
 @router.get("/", response_model=list[UsageLogResponse])

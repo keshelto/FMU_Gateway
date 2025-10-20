@@ -48,6 +48,12 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def user_id(self) -> str:
+        """Expose a stable attribute for compatibility with older Pydantic."""
+
+        return self.id
+
 
 class APIKey(Base):
     """User-managed API keys for accessing the FMU Gateway."""

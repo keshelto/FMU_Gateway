@@ -28,4 +28,20 @@ class UserResponse(BaseModel):
     api_key: str | None = None
     credits: int
 
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+    if hasattr(BaseModel, "model_config"):
+        model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
+            allow_population_by_field_name = True
+
+    def dict(self, *args, **kwargs):  # type: ignore[override]
+        by_alias = kwargs.get("by_alias")
+        kwargs["by_alias"] = False
+        data = super().dict(*args, **kwargs)
+        if by_alias and "user_id" in data:
+            return {**data}
+        return data
+
+    def model_dump(self, *args, **kwargs):  # type: ignore[override]
+        return self.dict(*args, **kwargs)
