@@ -28,7 +28,11 @@ class APIKeyResponse(BaseModel):
     last_used_at: datetime | None
     usage_count: int = 0
 
-    model_config = ConfigDict(from_attributes=True)
+    if hasattr(BaseModel, "model_config"):
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
 
 
 class APIKeyCreateRequest(BaseModel):
