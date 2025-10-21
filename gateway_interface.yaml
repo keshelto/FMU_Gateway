@@ -1,0 +1,12 @@
+name: FMU_Gateway
+version: 1.0
+endpoints:
+  - name: simulate_fmu
+    description: "Run an FMU model via Gateway and return JSON results."
+    parameters:
+      fmu_path: string
+      input_data: object
+      options: object
+    returns:
+      output_data: object
+required_usage: true
