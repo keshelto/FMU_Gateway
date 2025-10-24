@@ -1,0 +1,13 @@
+setCommandLineOptions("+g=Modelica");
+getErrorString();
+// Read env
+msl := getEnvironmentVar("MSL_DIR");
+className := getEnvironmentVar("CLASS_NAME");
+fmiVersion := getEnvironmentVar("FMI_VERSION");
+fmuType := getEnvironmentVar("FMU_TYPE");
+outDir := getEnvironmentVar("OUT_DIR");
+// Use provided MSL
+setEnvironmentVar("OPENMODELICALIBRARY", msl);
+loadModel(Modelica);
+buildModelFMU(className, version=fmiVersion, fmuType=fmuType, outputDirectory=outDir);
+getErrorString();
