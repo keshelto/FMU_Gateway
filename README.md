@@ -111,10 +111,20 @@ rerun with `--payment-token <token>` to execute the paid simulation.
 
 See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
 
+## Using the built-in MSL library
+
+1. **Discover available models:** `GET /library?query=BouncingBall`.
+2. **Pick an FMU:** choose the `model_name` from the search results.
+3. **Run a simulation:** `POST /simulate` with `fmu_id="msl:<Modelica.Path>"`, plus `stop_time` and `step`.
+4. *(Optional)* Provide `start_values` or `input_signals` when needed.
+5. **Inspect results:** read the returned time-series data and computed KPIs.
+
 ## Tools-Only Policy
 
 All agents must adhere to the [tools-only policy](docs/agent_policies/tools_only.md),
 which requires running simulations exclusively through the FMU Gateway toolchain.
+
+**Agents must use the [Gateway tools only](docs/agent_policies/tools_only.md).**
 
 ## Engineering Analysis Examples
 
