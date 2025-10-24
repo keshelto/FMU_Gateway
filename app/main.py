@@ -381,7 +381,7 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
     return api_key_obj
 
 app = FastAPI(title="FMU Gateway")
-app.include_router(library_router, dependencies=[Depends(verify_api_key)])
+app.include_router(library_router)
 
 
 SIMULATION_RESULTS: Dict[str, dict] = {}
