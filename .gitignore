@@ -19,8 +19,8 @@ test.db
 simulation_results/
 data/simulation_summaries/
 data/sweep_results/
-Engineering_Analysis_Examples/Scav_Capacity/outputs/*
-!Engineering_Analysis_Examples/Scav_Capacity/outputs/.gitkeep
+examples/offline/Engineering_Analysis_Examples/Scav_Capacity/outputs/*
+!examples/offline/Engineering_Analysis_Examples/Scav_Capacity/outputs/.gitkeep
 
 # Docker
 *.log

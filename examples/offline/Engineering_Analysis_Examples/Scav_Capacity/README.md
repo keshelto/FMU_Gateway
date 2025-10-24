@@ -33,11 +33,11 @@ Process the example data set (derived from a gateway FMU run) and produce a
 customer-facing summary:
 
 ```bash
-python Engineering_Analysis_Examples/Scav_Capacity/run_example.py
+python examples/offline/Engineering_Analysis_Examples/Scav_Capacity/run_example.py
 ```
 
 When you run the script it writes customer-ready artefacts to
-`Engineering_Analysis_Examples/Scav_Capacity/outputs/`:
+`examples/offline/Engineering_Analysis_Examples/Scav_Capacity/outputs/`:
 
 - `scavenge_capacity_summary.json` – machine-readable metrics for downstream agents
 - `scavenge_capacity_summary.md` – ready-to-send briefing for customers

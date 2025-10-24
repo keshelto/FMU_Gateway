@@ -127,7 +127,7 @@ python run_fmu_simulation.py --auto --fmu=path/to/model.fmu
 
 ### Scavenge pump capacity customer pack
 ```bash
-python Engineering_Analysis_Examples/Scav_Capacity/run_example.py
+python examples/offline/Engineering_Analysis_Examples/Scav_Capacity/run_example.py
 ```
 - Summarises the provided scavenge pump dataset
 - Embeds gateway health status so agents can reassure customers before charging

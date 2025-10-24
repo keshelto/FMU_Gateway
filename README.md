@@ -111,17 +111,22 @@ rerun with `--payment-token <token>` to execute the paid simulation.
 
 See [AI_AGENT_GUIDE.md](AI_AGENT_GUIDE.md) for complete guide.
 
+## Tools-Only Policy
+
+All agents must adhere to the [tools-only policy](docs/agent_policies/tools_only.md),
+which requires running simulations exclusively through the FMU Gateway toolchain.
+
 ## Engineering Analysis Examples
 
 ### Scavenge pump capacity workflow
 
 1. Start the gateway locally (`uvicorn app.main:app --host 0.0.0.0 --port 8000`).
 2. Quote the job: `python run_fmu_simulation.py --auto --fmu app/library/msl/BouncingBall.fmu --quote`.
-3. Generate a customer report: `python Engineering_Analysis_Examples/Scav_Capacity/run_example.py`.
+3. Generate a customer report: `python examples/offline/Engineering_Analysis_Examples/Scav_Capacity/run_example.py`.
 4. Complete checkout (Stripe) and rerun with the token from `/payments/checkout/{session_id}`.
 
 The analysis script stores JSON + Markdown briefs (and a PNG overview chart)
-inside `Engineering_Analysis_Examples/Scav_Capacity/outputs/`. Those artefacts
+inside `examples/offline/Engineering_Analysis_Examples/Scav_Capacity/outputs/`. Those artefacts
 are generated on demand and ignored by git so you can recreate them per run and
 share the fresh outputs with customers as soon as payment clears.
 

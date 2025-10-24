@@ -10,6 +10,8 @@ from . import schemas
 
 DEFAULT_DRIVE_CYCLE_PATH = (
     Path(__file__).resolve().parent.parent
+    / "examples"
+    / "offline"
     / "Engineering_Analysis_Examples"
     / "Flexible_Compound_Gear"
     / "engine_cam_drive_cycle.csv"
