@@ -1,16 +1,22 @@
 """Enhanced FMU Gateway Client with auto-detection, fallback, and smart caching"""
+import logging
+import os
 import requests
 import hashlib
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InputSignal(BaseModel):
+    """Input signal definition accepted by the gateway."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str
-    t: List[float]
-    u: List[float]
+    t: List[float] = Field(alias="times")
+    u: List[float] = Field(alias="values")
 
 
 class SimulateRequest(BaseModel):
@@ -25,6 +31,9 @@ class SimulateRequest(BaseModel):
     quote_only: Optional[bool] = None
     parameters: Optional[Dict[str, Any]] = None
     drive_cycle: Optional[List[Dict[str, Any]]] = None
+
+
+logger = logging.getLogger(__name__)
 
 
 class EnhancedFMUGatewayClient:
@@ -249,10 +258,40 @@ class EnhancedFMUGatewayClient:
             response.raise_for_status()
             result = response.json()
             sim_time = time.time() - start_time
-            
+
             if self.verbose:
                 print(f"✓ Simulation complete ({sim_time:.1f}s)")
-            
+
+            metadata = result.get('metadata', {}) if isinstance(result, dict) else {}
+            version = (
+                metadata.get('gateway_version')
+                or (result.get('gateway_version') if isinstance(result, dict) else None)
+                or metadata.get('version')
+                or (result.get('version') if isinstance(result, dict) else None)
+                or 'unknown'
+            )
+            host = (
+                metadata.get('gateway_host')
+                or (result.get('gateway_host') if isinstance(result, dict) else None)
+                or metadata.get('host')
+                or (result.get('host') if isinstance(result, dict) else None)
+                or self.gateway_url
+                or 'unknown'
+            )
+            job_id = (
+                metadata.get('job_id')
+                or (result.get('job_id') if isinstance(result, dict) else None)
+                or metadata.get('id')
+                or (result.get('id') if isinstance(result, dict) else None)
+                or 'unknown'
+            )
+            logger.info(
+                "Executed via FMU Gateway %s host=%s job=%s",
+                version,
+                host,
+                job_id,
+            )
+
             return result
             
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
@@ -283,8 +322,10 @@ class EnhancedFMUGatewayClient:
         except Exception as e:
             if self.verbose:
                 print(f"⚠️ Gateway unavailable: {e}")
-            
+
             if local_simulator and self.auto_fallback:
+                if os.getenv("FMU_GATEWAY_ENV", "").upper() == "PROD":
+                    raise RuntimeError("Local simulation disabled in PROD")
                 if self.verbose:
                     print("⚠️ Falling back to local simulation...")
                 result = local_simulator(req)
