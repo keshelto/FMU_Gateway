@@ -1,0 +1,27 @@
+name: build-msl-fmus
+on: {workflow_dispatch: {}, push: {paths: ["scripts/msl_*","scripts/build_fmu.mos",".github/workflows/build-msl.yml"]}}
+jobs:
+  build-msl:
+    runs-on: ubuntu-latest
+    container: { image: openmodelica/openmodelica:v1.23.0 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch MSL 4.1.0
+        run: |
+          curl -L https://github.com/modelica/ModelicaStandardLibrary/archive/refs/tags/v4.1.0.tar.gz | tar xz
+          mv ModelicaStandardLibrary-4.1.0 MSL
+      - name: Build FMUs
+        env: { MSL_DIR: ${{ github.workspace }}/MSL, FMI_VERSION: "2.0", FMU_TYPE: "me_cs" }
+        run: |
+          mkdir -p app/library/msl
+          while read MODEL; do
+            CLASS_NAME="$MODEL" OUT_DIR="$GITHUB_WORKSPACE/app/library/msl" omc scripts/build_fmu.mos
+          done < scripts/msl_models.txt
+      - name: Index
+        run: |
+          python3 scripts/index_msl.py app/library/msl > app/library/msl/index.json
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msl-fmus
+          path: app/library/msl
