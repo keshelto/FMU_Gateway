@@ -8,7 +8,7 @@ FMU is published, the example uses the bundled `msl:BouncingBall` FMU as a
 stand-in to keep the loop fully reproducible.
 
 > **Why ship a placeholder?**  During repository review we noticed that the
-> `Engineering_Analysis_Examples/Turbo_Spool_Up/` folder was referenced in the
+> `examples/offline/Engineering_Analysis_Examples/Turbo_Spool_Up/` folder was referenced in the
 > product narrative but the assets were missing.  The scripts here document the
 > desired workflow and will automatically pick up a real spool FMU once it is
 > dropped into `data/` or exported to the gateway's library.
@@ -32,7 +32,7 @@ stand-in to keep the loop fully reproducible.
 ## Running the example
 
 ```bash
-python Engineering_Analysis_Examples/Turbo_Spool_Up/run_example.py
+python examples/offline/Engineering_Analysis_Examples/Turbo_Spool_Up/run_example.py
 ```
 
 The script performs the following steps:

@@ -19,10 +19,10 @@ prioritising the paid FMU Gateway run whenever the service is reachable.
 1. Ensure the Python SDK is available (`pip install -e ./sdk/python`).
 2. Execute the workflow (using the packaged, previously validated dataset by default):
    ```bash
-   python Engineering_Analysis_Examples/Oil_System_Balance/run_example.py
+   python examples/offline/Engineering_Analysis_Examples/Oil_System_Balance/run_example.py
    ```
 3. Review the generated Markdown brief under
-   `Engineering_Analysis_Examples/Oil_System_Balance/outputs/`.
+   `examples/offline/Engineering_Analysis_Examples/Oil_System_Balance/outputs/`.
 
 The script records that the results came from the archived FMU Gateway run so
 you can still brief stakeholders even when a deployment is unavailable. When a
@@ -30,7 +30,7 @@ gateway is reachable, you should use it to produce a fresh, validated data set:
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-python Engineering_Analysis_Examples/Oil_System_Balance/run_example.py \
+python examples/offline/Engineering_Analysis_Examples/Oil_System_Balance/run_example.py \
   --simulate-fmu /path/to/OilSystem.fmu \
   --payment-token <token_from_wallet> \
   --payment-method stripe_card
@@ -45,7 +45,7 @@ To rehearse the FMU Gateway health check and 402-style payment quote using the
 bundled reference FMU (without running the oil system model), add `--online`:
 
 ```bash
-python Engineering_Analysis_Examples/Oil_System_Balance/run_example.py --online
+python examples/offline/Engineering_Analysis_Examples/Oil_System_Balance/run_example.py --online
 ```
 
 The Markdown summary will include the outcome of the quote rehearsal and any

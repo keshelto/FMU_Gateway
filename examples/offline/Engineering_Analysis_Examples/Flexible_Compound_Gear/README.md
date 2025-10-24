@@ -44,12 +44,12 @@ workflow), and execute the helper:
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ./sdk/python
-python Engineering_Analysis_Examples/Flexible_Compound_Gear/run_example.py
+python examples/offline/Engineering_Analysis_Examples/Flexible_Compound_Gear/run_example.py
 ```
 
 By default the helper operates in **offline** mode – it consumes the packaged
 `engine_cam_drive_cycle.csv` and generates the plots/summary under
-`Engineering_Analysis_Examples/Flexible_Compound_Gear/outputs/`.
+`examples/offline/Engineering_Analysis_Examples/Flexible_Compound_Gear/outputs/`.
 
 When an FMU Gateway deployment is reachable you can execute the same script with
 `--online` and point it at the six FMUs requested in the brief. The script will
@@ -59,7 +59,7 @@ briefings and unit tests.
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-python Engineering_Analysis_Examples/Flexible_Compound_Gear/run_example.py \
+python examples/offline/Engineering_Analysis_Examples/Flexible_Compound_Gear/run_example.py \
   --simulate-fmu /path/to/TorsionalDriveTrain.fmu \
   --simulate-fmu /path/to/FrictionRing.fmu \
   --simulate-fmu /path/to/FlashTemp.fmu \
