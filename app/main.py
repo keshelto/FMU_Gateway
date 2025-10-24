@@ -18,6 +18,7 @@ import io
 import base64
 import copy
 from datetime import datetime, timedelta
+import logging
 import secrets
 from typing import Optional, Dict, List
 from redis import Redis
@@ -30,6 +31,7 @@ import stripe
 from coinbase_commerce.client import Client as CoinbaseClient
 from coinbase_commerce.error import SignatureVerificationError, WebhookInvalidPayload
 from pathlib import Path
+from app.logging_utils import log_simulation_event
 
 # Redis with fallback
 r = None
@@ -44,6 +46,7 @@ except Exception as e:
 STRIPE_ENABLED = os.getenv('STRIPE_ENABLED', 'true').lower() == 'true'
 COINBASE_ENABLED = os.getenv('COINBASE_ENABLED', 'false').lower() == 'true'
 REQUIRE_AUTH = os.getenv('REQUIRE_AUTH', 'true').lower() == 'true'
+PROMETHEUS_ENABLED = os.getenv('PROMETHEUS', '0') == '1'
 
 SIMULATION_PRICE_CENTS = int(os.getenv('STRIPE_SIMULATION_PRICE_CENTS', '100'))
 SIMULATION_CURRENCY = os.getenv('STRIPE_SIMULATION_CURRENCY', 'usd')
@@ -55,6 +58,30 @@ CHECKOUT_TOKEN_TTL_MINUTES = int(os.getenv('CHECKOUT_TOKEN_TTL_MINUTES', '30'))
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
 COINBASE_API_KEY = os.getenv('COINBASE_API_KEY')
 COINBASE_WEBHOOK_SECRET = os.getenv('COINBASE_WEBHOOK_SECRET')
+GATEWAY_VERSION = os.getenv('GATEWAY_VERSION', 'dev')
+GATEWAY_HOST = os.getenv('GATEWAY_HOST', PUBLIC_BASE_URL)
+
+logger = logging.getLogger('fmu_gateway')
+
+SIMULATION_COUNTER = None
+SIMULATION_DURATION = None
+PROMETHEUS_APP = None
+if PROMETHEUS_ENABLED:
+    try:
+        from prometheus_client import Counter, Summary, make_asgi_app
+    except ImportError:
+        PROMETHEUS_ENABLED = False
+    else:
+        SIMULATION_COUNTER = Counter(
+            'fmu_simulate_total',
+            'Total FMU simulations',
+            ['status'],
+        )
+        SIMULATION_DURATION = Summary(
+            'fmu_simulate_seconds',
+            'Wall-clock time spent running simulations',
+        )
+        PROMETHEUS_APP = make_asgi_app()
 
 # Initialize Coinbase Commerce client
 coinbase_client = None
@@ -383,6 +410,9 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
 app = FastAPI(title="FMU Gateway")
 app.include_router(library_router)
 
+if PROMETHEUS_ENABLED and PROMETHEUS_APP is not None:
+    app.mount("/metrics", PROMETHEUS_APP)
+
 
 SIMULATION_RESULTS: Dict[str, dict] = {}
 SWEEP_RESULTS: Dict[str, dict] = {}
@@ -439,7 +469,10 @@ def _load_sweep_result(sweep_id: str) -> schemas.SweepResultData:
     return schemas.SweepResultData.model_validate(payload)
 
 
-def _run_structured_simulation(req: schemas.SimulateRequest) -> schemas.SimulationSummary:
+def _run_structured_simulation(
+    req: schemas.SimulateRequest,
+    run_id: Optional[str] = None,
+) -> schemas.SimulationSummary:
     parameters = req.parameters or schemas.SimulationParameters()
     try:
         drive_cycle = flexible.load_drive_cycle(req.drive_cycle)
@@ -447,7 +480,7 @@ def _run_structured_simulation(req: schemas.SimulateRequest) -> schemas.Simulati
         raise HTTPException(400, str(exc))
 
     history, summary_values = flexible.simulate(req, parameters, drive_cycle)
-    run_id = str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
     summary_url = f"/simulations/{run_id}"
 
     key_results: Dict[str, float | str] = {}
@@ -1049,92 +1082,142 @@ def _resolve_msl_model_path(model_name: str) -> Path:
 @app.post("/simulate", response_model=schemas.SimulationResult)
 def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
     import hashlib
-    if req.quote_only:
-        return JSONResponse(
-            status_code=402,
-            content=schemas.PaymentResponse(status="quote_only", description="Simulation payment quote", next_step="Use /pay to create a checkout session and resubmit with the issued token").model_dump()
+
+    start_time = time.perf_counter()
+    job_id: Optional[str] = None
+    start_logged = False
+    log_status = "start"
+    fmi_version: Optional[str] = None
+    success = False
+
+    def log_start() -> None:
+        nonlocal start_logged, job_id
+        if not start_logged:
+            if job_id is None:
+                job_id = str(uuid.uuid4())
+            log_simulation_event(
+                level="INFO",
+                event="simulate_start",
+                fmu_id=req.fmu_id,
+                fmi=None,
+                step=req.step,
+                stop_time=req.stop_time,
+                status="start",
+                wall_ms=None,
+                job_id=job_id,
+            )
+            start_logged = True
+
+    try:
+        if req.quote_only:
+            log_status = "quote_only"
+            log_start()
+            return JSONResponse(
+                status_code=402,
+                content=schemas.PaymentResponse(
+                    status="quote_only",
+                    description="Simulation payment quote",
+                    next_step="Use /pay to create a checkout session and resubmit with the issued token",
+                ).model_dump(),
+            )
+
+        structured_mode = bool(
+            req.parameters
+            or req.drive_cycle
+            or req.fmu_id.startswith("structured:")
         )
 
-    structured_mode = bool(
-        req.parameters
-        or req.drive_cycle
-        or req.fmu_id.startswith("structured:")
-    )
+        if structured_mode:
+            job_id = job_id or str(uuid.uuid4())
+            log_start()
+            structured_start = time.perf_counter()
+            summary = _run_structured_simulation(req, run_id=job_id)
+            duration = int((time.perf_counter() - structured_start) * 1000)
+            usage = db_mod.Usage(api_key_id=current_user.id, fmu_id=req.fmu_id, duration_ms=duration)
+            db.add(usage)
+            db.commit()
+            success = True
+            log_status = "ok"
+            return schemas.SimulationResult.model_validate(summary.model_dump())
 
-    if structured_mode:
-        start_time = time.time()
-        summary = _run_structured_simulation(req)
-        duration = int((time.time() - start_time) * 1000)
-        usage = db_mod.Usage(api_key_id=current_user.id, fmu_id=req.fmu_id, duration_ms=duration)
-        db.add(usage)
-        db.commit()
-        return schemas.SimulationResult.model_validate(summary.model_dump())
+        req_dump = json.dumps(
+            req.model_dump(exclude={'payment_token', 'payment_method', 'quote_only'}),
+            sort_keys=True
+        )
+        cache_key = f"sim:{req.fmu_id}:{hashlib.sha256(req_dump.encode()).hexdigest()}"
+        cached = None
+        if r is not None:
+            try:
+                cached = r.get(cache_key)
+            except Exception as e:
+                print(f"Redis get failed: {e}. Skipping cache.")
+        if cached:
+            cached_payload = json.loads(cached)
+            response = schemas.SimulationResult.model_validate(cached_payload)
+            job_id = response.run_id or job_id
+            log_start()
+            log_status = "cache_hit"
+            success = response.status == "ok"
+            return response
 
-    req_dump = json.dumps(
-        req.model_dump(exclude={'payment_token', 'payment_method', 'quote_only'}),
-        sort_keys=True
-    )
-    cache_key = f"sim:{req.fmu_id}:{hashlib.sha256(req_dump.encode()).hexdigest()}"
-    cached = None
-    if r is not None:
-        try:
-            cached = r.get(cache_key)
-        except Exception as e:
-            print(f"Redis get failed: {e}. Skipping cache.")
-    if cached:
-        return schemas.SimulationResult.model_validate(json.loads(cached))
+        job_id = job_id or str(uuid.uuid4())
+        log_start()
 
-    consumed_token: Optional[db_mod.PaymentToken] = None
-    if STRIPE_ENABLED or COINBASE_ENABLED:
-        claimed_token = _claim_payment_token(db, current_user.id, req.payment_token)
-        if claimed_token is None:
-            error_code = None
-            if req.payment_token:
-                error_code = "invalid_or_expired_payment_token"
+        consumed_token: Optional[db_mod.PaymentToken] = None
+        if STRIPE_ENABLED or COINBASE_ENABLED:
+            claimed_token = _claim_payment_token(db, current_user.id, req.payment_token)
+            if claimed_token is None:
+                error_code = None
+                if req.payment_token:
+                    error_code = "invalid_or_expired_payment_token"
 
-            ready_token = _latest_ready_token(db, current_user.id)
-            if ready_token:
-                response_payload = _build_payment_response(ready_token)
-                response_payload.error = error_code or "awaiting_payment_confirmation"
+                ready_token = _latest_ready_token(db, current_user.id)
+                if ready_token:
+                    response_payload = _build_payment_response(ready_token)
+                    response_payload.error = error_code or "awaiting_payment_confirmation"
+                    log_status = "http_402"
+                    return JSONResponse(status_code=402, content=response_payload.model_dump())
+
+                reusable = _reuse_pending_session(db, current_user.id)
+                if not reusable:
+                    # Determine payment method - default to Stripe if both enabled, or use the requested method
+                    payment_method = req.payment_method or "stripe"
+
+                    if payment_method == "crypto" and COINBASE_ENABLED:
+                        reusable = _create_coinbase_charge(db, current_user, req.fmu_id)
+                    elif STRIPE_ENABLED:
+                        _ensure_stripe_customer(current_user, db)
+                        reusable = _create_checkout_session(db, current_user, req.fmu_id)
+                    else:
+                        log_status = "http_400"
+                        raise HTTPException(400, f"Payment method '{payment_method}' not available")
+
+                response_payload = _build_payment_response(reusable)
+                response_payload.error = error_code or "complete_checkout"
+                log_status = "http_402"
                 return JSONResponse(status_code=402, content=response_payload.model_dump())
 
-            reusable = _reuse_pending_session(db, current_user.id)
-            if not reusable:
-                # Determine payment method - default to Stripe if both enabled, or use the requested method
-                payment_method = req.payment_method or "stripe"
-                
-                if payment_method == "crypto" and COINBASE_ENABLED:
-                    reusable = _create_coinbase_charge(db, current_user, req.fmu_id)
-                elif STRIPE_ENABLED:
-                    _ensure_stripe_customer(current_user, db)
-                    reusable = _create_checkout_session(db, current_user, req.fmu_id)
-                else:
-                    raise HTTPException(400, f"Payment method '{payment_method}' not available")
-            
-            response_payload = _build_payment_response(reusable)
-            response_payload.error = error_code or "complete_checkout"
-            return JSONResponse(status_code=402, content=response_payload.model_dump())
+            consumed_token = claimed_token
+            if not consumed_token.fmu_id:
+                consumed_token.fmu_id = req.fmu_id
+                db.commit()
 
-        consumed_token = claimed_token
-        if not consumed_token.fmu_id:
-            consumed_token.fmu_id = req.fmu_id
-            db.commit()
+        if req.fmu_id.startswith('msl:'):
+            model_name = req.fmu_id.split(':', 1)[1]
+            path = _resolve_msl_model_path(model_name)
+            sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            path = Path(storage.get_fmu_path(req.fmu_id))
+            if not path.exists():
+                log_status = "http_404"
+                raise HTTPException(404, "FMU not found")
+            sha256 = storage.get_fmu_sha256(req.fmu_id)
 
-    if req.fmu_id.startswith('msl:'):
-        model_name = req.fmu_id.split(':', 1)[1]
-        path = _resolve_msl_model_path(model_name)
-        sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-    else:
-        path = Path(storage.get_fmu_path(req.fmu_id))
-        if not path.exists():
-            raise HTTPException(404, "FMU not found")
-        sha256 = storage.get_fmu_sha256(req.fmu_id)
-
-    start_time = time.time()
-    try:
+        simulation_start = time.perf_counter()
         result = simulate.simulate_fmu(str(path), req)
-        duration = int((time.time() - start_time) * 1000)
+        duration = int((time.perf_counter() - simulation_start) * 1000)
         meta = storage.read_model_description(path)
+        fmi_version = getattr(meta, "fmiVersion", None)
         validation.validate_simulation_output(result, meta)
         t = result['time'].tolist()
         y = {name: result[name].tolist() for name in result.dtype.names if name != 'time'}
@@ -1146,7 +1229,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
             "guid": meta.guid,
             "sha256": sha256
         }
-        run_id = str(uuid.uuid4())
+        run_id = job_id
         summary_url = f"/simulations/{run_id}"
         history = {"time": t, **y}
         key_results: Dict[str, float | str] = {}
@@ -1180,15 +1263,54 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
         db.add(usage)
         db.commit()
 
+        log_status = "ok"
+        success = True
         return response
     except ValidationError as e:
+        log_status = "validation_error"
         raise HTTPException(400, str(e))
     except TimeoutError:
+        log_status = "timeout"
         raise HTTPException(408, "Simulation timeout")
     except validation.SimulationValidationError as e:
+        log_status = "validation_error"
         raise HTTPException(422, str(e))
+    except HTTPException as exc:
+        if not log_status or log_status == "start":
+            log_status = f"http_{exc.status_code}"
+        raise
     except Exception as e:
+        log_status = "error"
         raise HTTPException(500, str(e))
+    finally:
+        if start_logged:
+            wall_ms = int((time.perf_counter() - start_time) * 1000)
+            level = "INFO"
+            if log_status.startswith("http_4"):
+                level = "WARNING"
+            elif log_status not in {"ok", "cache_hit", "quote_only"}:
+                level = "ERROR"
+            log_simulation_event(
+                level=level,
+                event="simulate_done",
+                fmu_id=req.fmu_id,
+                fmi=fmi_version,
+                step=req.step,
+                stop_time=req.stop_time,
+                status=log_status,
+                wall_ms=wall_ms,
+                job_id=job_id or "",
+            )
+            if PROMETHEUS_ENABLED and SIMULATION_COUNTER and SIMULATION_DURATION:
+                SIMULATION_COUNTER.labels(status=log_status).inc()
+                SIMULATION_DURATION.observe(wall_ms / 1000.0)
+            if success:
+                logger.info(
+                    "Executed via FMU Gateway %s host=%s job=%s",
+                    GATEWAY_VERSION,
+                    GATEWAY_HOST,
+                    job_id,
+                )
 
 
 @app.get("/simulations/{run_id}", response_model=schemas.SimulationSummary)
