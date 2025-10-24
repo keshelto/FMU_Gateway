@@ -1,0 +1,106 @@
+{
+  "schema_version": "v1",
+  "functions": [
+    {
+      "name": "create_key",
+      "description": "Request creation of a new FMU Gateway API key for the current user.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "upload_fmu",
+      "description": "Upload an FMU to the gateway, providing either a filesystem path or base64-encoded content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Path to the FMU on disk or base64-encoded FMU payload."
+          }
+        },
+        "required": ["file"]
+      }
+    },
+    {
+      "name": "library_query",
+      "description": "Search the FMU library for available models matching the provided query string.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search phrase used to filter FMUs in the gateway library."
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "simulate",
+      "description": "Execute an FMU simulation job on the FMU Gateway.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fmu_id": {
+            "type": "string",
+            "description": "Identifier of the FMU previously uploaded to the gateway."
+          },
+          "stop_time": {
+            "type": "number",
+            "description": "Simulation stop time in seconds."
+          },
+          "step": {
+            "type": "number",
+            "description": "Simulation time step in seconds."
+          },
+          "start_values": {
+            "type": "object",
+            "description": "Map of variable names to override their initial values.",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "input_signals": {
+            "type": "array",
+            "description": "Signal definitions provided to the simulation as inputs.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Name of the input signal."
+                },
+                "times": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "Time vector for the signal in seconds."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "Values corresponding to each time step."
+                }
+              },
+              "required": ["name", "times", "values"]
+            }
+          },
+          "kpis": {
+            "type": "array",
+            "description": "List of KPI identifiers requested from the simulation results.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["fmu_id", "stop_time", "step"]
+      }
+    }
+  ]
+}
