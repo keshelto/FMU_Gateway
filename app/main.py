@@ -5,6 +5,7 @@ import app.schemas as schemas
 import app.simulate as simulate
 import app.storage as storage
 import app.validation as validation
+from app.library import router as library_router, _index_path as library_index_path
 import app.security as security
 import app.kpi as kpi
 import app.flexible_simulation as flexible
@@ -29,9 +30,6 @@ import stripe
 from coinbase_commerce.client import Client as CoinbaseClient
 from coinbase_commerce.error import SignatureVerificationError, WebhookInvalidPayload
 from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent
-LIBRARY_DIR = BASE_DIR / "library"
 
 # Redis with fallback
 r = None
@@ -383,6 +381,7 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
     return api_key_obj
 
 app = FastAPI(title="FMU Gateway")
+app.include_router(library_router, dependencies=[Depends(verify_api_key)])
 
 
 SIMULATION_RESULTS: Dict[str, dict] = {}
@@ -1022,27 +1021,30 @@ def get_fmu_by_hash(sha256: str, current_user: db_mod.ApiKey = Depends(verify_ap
                 }
     raise HTTPException(404, "FMU with this hash not found")
 
-@app.get("/library")
-def get_library(query: Optional[str] = None, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
-    fmu_files = sorted((LIBRARY_DIR / "msl").glob("*.fmu"))
-    models = []
-    for f in fmu_files:
-        try:
-            meta = storage.read_model_description(str(f))
-            info = {
-                "id": f.stem,
-                "model_name": meta.modelName,
-                "fmi_version": meta.fmiVersion,
-                "guid": meta.guid,
-                "description": getattr(meta, 'description', None)
-            }
-            if query:
-                if query.lower() not in info['model_name'].lower() and query.lower() not in info['id'].lower():
-                    continue
-            models.append(info)
-        except Exception:
-            continue  # Skip invalid FMUs
-    return models
+
+def _resolve_msl_model_path(model_name: str) -> Path:
+    idx_path = library_index_path()
+    if idx_path is None:
+        raise HTTPException(503, "Library index unavailable")
+
+    catalog = json.loads(idx_path.read_text())
+    items = catalog.get("items", [])
+    match = next((item for item in items if item.get("model_name") == model_name), None)
+    if not match:
+        raise HTTPException(404, "Library model not found")
+
+    rel_path = match.get("path")
+    if not rel_path:
+        raise HTTPException(404, "Library model not found")
+
+    candidate = Path(rel_path)
+    if not candidate.is_absolute():
+        candidate = idx_path.parent / candidate
+
+    if not candidate.exists():
+        raise HTTPException(404, "Library model not found")
+
+    return candidate
 
 @app.post("/simulate", response_model=schemas.SimulationResult)
 def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = Depends(verify_api_key), db=Depends(get_db)):
@@ -1120,9 +1122,7 @@ def run_simulation(req: schemas.SimulateRequest, current_user: db_mod.ApiKey = D
 
     if req.fmu_id.startswith('msl:'):
         model_name = req.fmu_id.split(':', 1)[1]
-        path = LIBRARY_DIR / 'msl' / f"{model_name}.fmu"
-        if not path.exists():
-            raise HTTPException(404, "Library FMU not found")
+        path = _resolve_msl_model_path(model_name)
         sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     else:
         path = Path(storage.get_fmu_path(req.fmu_id))
