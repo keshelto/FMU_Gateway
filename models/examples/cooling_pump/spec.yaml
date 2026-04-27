@@ -1,0 +1,36 @@
+id: cooling_pump_v1
+name: Cooling Pump Sizing
+version: 1.0.0
+domain: thermal_fluids
+runner_type: python
+entrypoint: models.examples.cooling_pump.model:run
+review_status: reviewed
+
+assumptions:
+  - Coolant behaves as incompressible fluid.
+  - Heat capacity is constant over the specified temperature range.
+  - Pump efficiency and system pressure drop are not calculated in this model.
+
+inputs:
+  heat_rejection:
+    description: Heat rejected to coolant.
+    unit: kW
+    type: float
+    min: 0
+    max: 1000
+    required: true
+  delta_t:
+    description: Coolant temperature rise.
+    unit: K
+    type: float
+    min: 1
+    max: 50
+    required: true
+
+outputs:
+  mass_flow:
+    description: Required coolant mass flow.
+    unit: kg/s
+  volume_flow_lpm:
+    description: Required coolant volume flow.
+    unit: L/min
